@@ -4577,6 +4577,7 @@ const githubService_1 = __webpack_require__(/*! ./githubService */ "./src/github
 const reflogEngine_1 = __webpack_require__(/*! ./reflogEngine */ "./src/reflogEngine.ts");
 const educationalEngine_1 = __webpack_require__(/*! ./educationalEngine */ "./src/educationalEngine.ts");
 const gitCommandService_1 = __webpack_require__(/*! ./gitCommandService */ "./src/gitCommandService.ts");
+const cp = __importStar(__webpack_require__(/*! child_process */ "child_process"));
 function activate(context) {
     console.log('NGOPREK is now active!');
     // Register Command to Open Dashboard
@@ -4681,8 +4682,47 @@ class NgoPrekPanel {
                 case 'refreshState':
                     this.pushGitStatus();
                     return;
+                case 'terminalCommand':
+                    this.handleTerminalCommand(message.text);
+                    return;
             }
         }, null, this._disposables);
+    }
+    handleTerminalCommand(text) {
+        const folders = vscode.workspace.workspaceFolders;
+        if (!folders)
+            return;
+        const cwd = folders[0].uri.fsPath;
+        // Send echo of the command back
+        this.sendMessage({
+            command: 'terminalOutput',
+            data: `\u001b[32m$ ${text}\u001b[0m`
+        });
+        cp.exec(text, { cwd }, (error, stdout, stderr) => {
+            if (stdout) {
+                this.sendMessage({
+                    command: 'terminalOutput',
+                    data: stdout
+                });
+            }
+            if (stderr) {
+                this.sendMessage({
+                    command: 'terminalOutput',
+                    data: `\u001b[31m${stderr}\u001b[0m`
+                });
+            }
+            if (error && !stderr) {
+                this.sendMessage({
+                    command: 'terminalOutput',
+                    data: `\u001b[31mError: ${error.message}\u001b[0m`
+                });
+            }
+            // Auto refresh status if git command
+            if (text.trim().startsWith('git ')) {
+                this.pushGitStatus();
+                this.pushInitialGitObjects();
+            }
+        });
     }
     async handleGitAdd(filePath) {
         const folders = vscode.workspace.workspaceFolders;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import ReactFlow, {
   Controls,
   Background,
@@ -12,7 +12,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import Dagre from '@dagrejs/dagre';
-import { Github, Loader2, CheckCircle2, X, Zap, Box, Terminal, Layers, Ghost } from 'lucide-react';
+import { Loader2, X, Zap, Terminal, Layers, Ghost, Search, HelpCircle, Activity } from 'lucide-react';
 import { CommitBox } from './components/CommitBox';
 import { FileManager, FileItem } from './components/FileManager';
 import { Toolbar } from './components/Toolbar';
@@ -61,9 +61,19 @@ export default function App() {
   const [user, setUser] = useState<{login: string, avatar_url: string} | null>(null);
   const [workflows, setWorkflows] = useState<WorkflowRun[]>([]);
   const [isDeploying, setIsDeploying] = useState(false);
-  const [repoUrl, setRepoUrl] = useState<string | null>(null);
   const [educationalTip, setEducationalTip] = useState<{ title: string, content: string, type?: string } | null>(null);
   const [gitFiles, setGitFiles] = useState<FileItem[]>([]);
+  const [terminalLogs, setTerminalLogs] = useState<string[]>([
+    'Welcome to NGOPREK Dashboard [v1.2.0]',
+    '[system] engine ready. monitoring git repository...'
+  ]);
+  const [commandInput, setCommandInput] = useState('');
+  const [isTerminalMinimized, setIsTerminalMinimized] = useState(false);
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [terminalLogs]);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge(params, eds)),
@@ -94,25 +104,25 @@ export default function App() {
   const CustomNode = ({ data }: any) => {
     const isGhost = data.isGhost;
     return (
-      <div className={`p-4 min-w-[150px] bg-[#121216]/90 backdrop-blur-md rounded-lg border transition-all duration-500
-        ${isGhost ? 'neon-border-pink border-neon-pink/50' : 'neon-border-cyan border-neon-cyan/50'}
+      <div className={`p-4 min-w-[200px] glass-panel rounded-2xl transition-all duration-500 hover:scale-105
+        ${isGhost ? 'neon-border-pink' : 'neon-border-cyan'}
       `}>
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                <div className={`text-[8px] font-black uppercase tracking-widest ${isGhost ? 'text-neon-pink' : 'text-neon-cyan'}`}>
+                <div className={`text-[9px] font-black uppercase tracking-widest ${isGhost ? 'text-neon-pink neon-text-pink' : 'text-neon-cyan neon-text-cyan'}`}>
                     {data.type || 'Object'}
                 </div>
-                {isGhost && <Ghost className="w-3 h-3 text-neon-pink animate-pulse" />}
+                {isGhost && <Ghost className="w-3.5 h-3.5 text-neon-pink animate-pulse" />}
             </div>
-            <div className="text-[10px] font-mono text-gray-400 truncate">{data.oid}</div>
-            <div className="text-[11px] font-bold text-gray-200 mt-1 line-clamp-2">{data.content}</div>
+            <div className="text-[10px] font-mono text-gray-500 bg-black/30 px-2 py-1 rounded-md">{data.oid.substring(0, 8)}</div>
+            <div className="text-[12px] font-bold text-gray-200 mt-1 line-clamp-2 leading-relaxed">{data.content}</div>
             
             {isGhost && (
               <button 
                 onClick={(e) => { e.stopPropagation(); resurrect(data.oid); }}
-                className="mt-3 py-1.5 bg-neon-pink/10 hover:bg-neon-pink/30 border border-neon-pink/20 rounded-md text-[9px] font-black text-neon-pink uppercase transition-all"
+                className="mt-3 py-2 bg-neon-pink text-black rounded-xl text-[10px] font-black uppercase tracking-widest transition-all hover:scale-105 active:scale-95 shadow-lg shadow-neon-pink/20"
               >
-                Resurrect
+                Resurrect Commit
               </button>
             )}
         </div>
@@ -135,7 +145,6 @@ export default function App() {
         case 'cloudStatusUpdate':
             if (message.user) setUser(message.user);
             if (message.workflows) setWorkflows(message.workflows);
-            if (message.repoUrl) setRepoUrl(message.repoUrl);
             const running = message.workflows?.some((w: WorkflowRun) => w.status === 'in_progress' || w.status === 'queued');
             setIsDeploying(!!running);
             break;
@@ -149,7 +158,6 @@ export default function App() {
             break;
 
         case 'reflogData':
-            console.log("Reflog Data:", message.data);
             const ghostNodes: Node[] = message.data.map((entry: any) => ({
                 id: `ghost-${entry.newSha}`,
                 type: 'ghost',
@@ -175,21 +183,18 @@ export default function App() {
                 const newNode: Node = {
                     id: oid,
                     type: type,
-                    position: { x: 0, y: 0 },
+                    position: { x: Math.random() * 100, y: Math.random() * 100 },
                     data: { type, oid, content, parents, tree, entries, isGhost: false }
                 };
 
                 const newEdges: Edge[] = [];
                 if (type === 'commit') {
                     if (parents) parents.forEach((p: string) => newEdges.push({
-                        id: `${oid}-parent-${p}`, source: oid, target: p, label: 'parent', animated: true, style: { stroke: '#ff6b6b' }, markerEnd: { type: MarkerType.ArrowClosed, color: '#ff6b6b' }
+                        id: `${oid}-parent-${p}`, source: oid, target: p, label: 'parent', animated: true, style: { stroke: 'rgba(255, 255, 255, 0.2)' }, markerEnd: { type: MarkerType.ArrowClosed, color: 'rgba(255, 255, 255, 0.4)' }
                     }));
-                    if (tree) newEdges.push({
-                        id: `${oid}-root-${tree}`, source: oid, target: tree, label: 'root', animated: true, style: { stroke: '#51cf66' }, markerEnd: { type: MarkerType.ArrowClosed, color: '#51cf66' }
-                    });
                 } else if (type === 'tree' && entries) {
                     entries.forEach((e: any) => newEdges.push({
-                        id: `${oid}-contains-${e.oid}`, source: oid, target: e.oid, label: 'contains', style: { stroke: '#339af0' }, markerEnd: { type: MarkerType.ArrowClosed, color: '#339af0' }
+                        id: `${oid}-contains-${e.oid}`, source: oid, target: e.oid, label: 'contains', style: { stroke: 'rgba(0, 242, 255, 0.2)' }, markerEnd: { type: MarkerType.ArrowClosed, color: 'rgba(0, 242, 255, 0.4)' }
                     }));
                 }
 
@@ -199,6 +204,9 @@ export default function App() {
                     return eds.concat(uniqueNew);
                 });
             }
+            break;
+        case 'terminalOutput':
+            setTerminalLogs((prev) => [...prev, message.data]);
             break;
       }
     };
@@ -214,99 +222,172 @@ export default function App() {
       setEdges([...layouted.edges]);
   }, [nodes, edges, setNodes, setEdges]);
 
+  const handleCommandSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!commandInput.trim()) return;
+      vscode.postMessage({ command: 'terminalCommand', text: commandInput });
+      setCommandInput('');
+  };
+
   return (
-    <div className="w-screen h-screen bg-[#0a0a0c] text-white flex font-sans overflow-hidden">
-      {/* 1. Global Navigation Sidebar */}
+    <div className="w-screen h-screen bg-[#050507] text-white flex font-sans overflow-hidden">
       <Sidebar />
 
       <div className="flex-grow flex flex-col min-w-0 h-full">
-        {/* 2. Top Executive Toolbar */}
         <Toolbar 
             onPull={gitPull}
             onPush={gitPush}
             onGitk={openGitk}
             onLayout={onLayout}
             onHuntGhosts={toggleGhosts}
+            onDeploy={deployToCloud}
+            isDeploying={isDeploying}
+            user={user}
+            workflows={workflows}
         />
 
         <div className="flex-grow flex min-h-0 relative">
           
-          {/* 3. Central Graph View - The Matrix */}
-          <div className="flex-grow h-full bg-[#0d0d10] relative grid-bg">
-            {isDeploying && (
-              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center gap-4 transition-all duration-500">
-                <div className="relative">
-                  <Loader2 className="w-12 h-12 text-neon-cyan animate-spin" />
-                  <div className="absolute inset-0 bg-neon-cyan/20 blur-xl animate-pulse" />
-                </div>
-                <div className="text-neon-cyan font-black tracking-[0.3em] uppercase animate-pulse">Synchronizing Data...</div>
-              </div>
-            )}
+          {/* Central Graph View */}
+          <div className="flex-grow h-full bg-[#08080a] relative grid-bg overflow-hidden flex flex-col">
+            <div className="flex-grow relative">
+                {isDeploying && (
+                  <div className="absolute inset-0 bg-black/80 backdrop-blur-md z-[60] flex flex-col items-center justify-center gap-4 transition-all duration-500">
+                    <Loader2 className="w-10 h-10 text-neon-cyan animate-spin" />
+                    <div className="text-neon-cyan font-black tracking-[0.3em] uppercase animate-pulse text-[10px]">Syncing Matrix...</div>
+                  </div>
+                )}
 
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              nodeTypes={nodeTypes}
-              fitView
-              className="z-10"
-            >
-              <Background color="rgba(0, 242, 255, 0.05)" gap={30} size={1} />
-              <Controls position="bottom-left" style={{ background: 'rgba(18,18,22,0.8)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px' }} />
-            </ReactFlow>
+                {nodes.length === 0 ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center z-0 p-10">
+                        <div className="w-full max-w-2xl glass-panel rounded-2xl p-8 border-dashed border-2 border-white/5 opacity-40">
+                            <div className="flex items-start gap-8">
+                                <Activity className="w-12 h-12 text-neon-cyan/50 animate-pulse" />
+                                <div className="flex-grow">
+                                    <h2 className="text-xl font-black uppercase tracking-[0.2em] text-white mb-2">Diagnostic Hub</h2>
+                                    <div className="grid grid-cols-2 gap-4 mt-6">
+                                        <div className="p-3 bg-white/5 rounded-lg border border-white/5">
+                                            <div className="text-[8px] text-gray-600 uppercase font-black mb-1">Local Repo</div>
+                                            <div className="text-[10px] text-neon-cyan font-mono">Initialized & Monitoring</div>
+                                        </div>
+                                        <div className="p-3 bg-white/5 rounded-lg border border-white/5">
+                                            <div className="text-[8px] text-gray-600 uppercase font-black mb-1">Graph State</div>
+                                            <div className="text-[10px] text-neon-pink font-mono uppercase">Idle / Waiting for data</div>
+                                        </div>
+                                    </div>
+                                    <div className="mt-8 flex items-center gap-3">
+                                        <div className="px-3 py-1 bg-neon-cyan/10 border border-neon-cyan/20 rounded-md text-[9px] font-black text-neon-cyan uppercase tracking-widest animate-pulse">
+                                            Ready for transmission
+                                        </div>
+                                        <span className="text-[10px] text-gray-500 italic">Create a commit to start visualization flow</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <ReactFlow
+                    nodes={nodes}
+                    edges={edges}
+                    onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
+                    onConnect={onConnect}
+                    nodeTypes={nodeTypes}
+                    fitView
+                    className="z-10"
+                    >
+                    <Background color="rgba(0, 242, 255, 0.03)" gap={25} size={1} />
+                    <Controls position="bottom-left" className="glass-panel scale-90" style={{ background: 'transparent', border: 'none', boxShadow: 'none' }} />
+                    </ReactFlow>
+                )}
 
-            {/* Bottom Status Log (Simulated) */}
-            <div className="absolute bottom-6 left-6 right-6 h-32 bg-black/40 border border-white/5 rounded-xl backdrop-blur-md p-4 flex flex-col z-20 pointer-events-none opacity-60">
-                <div className="flex items-center gap-2 mb-2">
-                   <Terminal className="w-3 h-3 text-neon-cyan" />
-                   <span className="text-[9px] font-black uppercase text-neon-cyan/70 tracking-widest">Live Terminal Log</span>
+                {/* Floating Terminal Overlay */}
+                <div className={`absolute bottom-4 left-4 right-4 ${isTerminalMinimized ? 'h-10' : 'h-48'} glass-panel rounded-xl flex flex-col z-40 transition-all duration-500 group shadow-2xl overflow-hidden`}>
+                    <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 cursor-pointer bg-white/2" onClick={() => setIsTerminalMinimized(!isTerminalMinimized)}>
+                        <div className="flex items-center gap-2">
+                           <Terminal className="w-3.5 h-3.5 text-neon-cyan" />
+                           <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Neural Terminal</span>
+                        </div>
+                        <div className="w-2 h-2 rounded-full bg-neon-green/40 shadow-[0_0_8px_#39ff14] animate-pulse" />
+                    </div>
+                    
+                    {!isTerminalMinimized && (
+                        <>
+                            <div className="flex-grow overflow-y-auto p-4 font-mono text-[10px] custom-scrollbar bg-black/10">
+                                {terminalLogs.map((log, i) => (
+                                    <div key={i} className="mb-1 text-gray-500 whitespace-pre-wrap flex gap-3">
+                                        <span className="text-gray-800 flex-shrink-0">[{i}]</span>
+                                        {log.startsWith('\u001b[32m') ? (
+                                            <span className="text-neon-cyan italic">{log.replace('\u001b[32m', '').replace('\u001b[0m', '')}</span>
+                                        ) : (
+                                            <span>{log}</span>
+                                        )}
+                                    </div>
+                                ))}
+                                <div ref={logEndRef} />
+                            </div>
+
+                            <form onSubmit={handleCommandSubmit} className="p-2.5 bg-black/20 border-t border-white/5 flex items-center gap-3">
+                                <span className="text-neon-cyan font-mono text-[10px] font-black">$</span>
+                                <input 
+                                    type="text"
+                                    value={commandInput}
+                                    onChange={(e) => setCommandInput(e.target.value)}
+                                    placeholder="Enter command shell..."
+                                    className="flex-grow bg-transparent border-none outline-none text-[11px] font-mono text-gray-200 placeholder:text-gray-800"
+                                />
+                            </form>
+                        </>
+                    )}
                 </div>
-                <div className="flex-grow font-mono text-[9px] text-green-500/50 overflow-hidden leading-relaxed">
-                   [git] reading objects from .git/objects...<br/>
-                   [system] indexing branches and reflogs...<br/>
-                   [engine] analyzing tree structure for OID 4a2b9...<br/>
-                   [ui] refreshing graph layout and node positioning...
+            </div>
+
+            {/* Bottom Global Status Bar */}
+            <div className="h-6 bg-[#050507] border-t border-white/5 flex items-center justify-between px-4 z-50">
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-1.5 text-[9px] font-bold text-gray-600">
+                        <div className="w-1.5 h-1.5 rounded-full bg-neon-cyan/50" />
+                        NODES: {nodes.length}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[9px] font-bold text-gray-600">
+                        <div className="w-1.5 h-1.5 rounded-full bg-neon-pink/50" />
+                        EDGES: {edges.length}
+                    </div>
                 </div>
+                <div className="text-[9px] font-mono text-gray-700">NGOPREK_SYS_v1.5 // READY // {new Date().toLocaleTimeString()}</div>
             </div>
           </div>
 
-          {/* 4. Right Controls Sidebar - The Command Center */}
-          <div className="w-[320px] h-full bg-[#121216] border-l border-white/5 flex flex-col p-6 gap-8 overflow-y-auto custom-scrollbar shadow-[-10px_0_30px_rgba(0,0,0,0.5)] z-30">
-            
-            <div className="flex items-center justify-between group cursor-help">
-               <div className="flex flex-col">
-                  <span className="text-[10px] uppercase tracking-widest text-neon-cyan font-black">Git Status</span>
-                  <span className="text-[8px] text-gray-600 font-bold">CONNECTED TO MAIN</span>
-               </div>
-               <div className="p-2 rounded-lg bg-green-500/10 border border-green-500/20">
-                  <Box className="w-4 h-4 text-green-500 shadow-[0_0_10px_rgba(34,197,94,0.3)]" />
-               </div>
-            </div>
-
-            <div className="flex gap-2 justify-between px-2">
-               {[1, 2, 3, 4].map(i => (
-                  <div key={i} className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center text-[8px] text-gray-500 hover:border-neon-cyan transition-colors">
-                     S{i}
-                  </div>
-               ))}
-            </div>
-
-            <div className="flex-grow flex flex-col gap-8">
+          {/* Right Sidebar Controls */}
+          <div className="w-[300px] h-full bg-[#050507] border-l border-white/5 flex flex-col p-4 gap-6 overflow-y-auto custom-scrollbar z-30">
+            <div className="flex-grow flex flex-col gap-6">
                <FileManager files={gitFiles} onAdd={gitAdd} onUnstage={gitUnstage} />
                <CommitBox onCommit={gitCommit} />
             </div>
 
-            <div className="mt-auto border-t border-white/5 pt-6">
-                <div className="bg-gradient-to-br from-blue-500/10 to-purple-500/10 p-4 rounded-xl border border-white/5">
-                   <div className="flex items-center gap-2 mb-2">
-                      <Layers className="w-3 h-3 text-neon-cyan" />
-                      <span className="text-[9px] font-black text-gray-400 tracking-widest uppercase">System Load</span>
+            <div className="mt-auto pt-6 border-t border-white/5 space-y-3">
+                <div className="glass-panel p-3 rounded-xl relative overflow-hidden group">
+                   <div className="flex items-center justify-between mb-2 relative z-10">
+                      <div className="flex items-center gap-2">
+                        <Layers className="w-3 h-3 text-neon-cyan" />
+                        <span className="text-[9px] font-black text-gray-500 tracking-widest uppercase">System Load</span>
+                      </div>
+                      <span className="text-[9px] font-mono text-neon-cyan">84%</span>
                    </div>
-                   <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
-                      <div className="w-3/4 h-full bg-neon-cyan shadow-[0_0_10px_#00f2ff]" />
+                   <div className="w-full h-1 bg-black/60 rounded-full overflow-hidden relative z-10">
+                      <div className="w-[84%] h-full bg-neon-cyan shadow-[0_0_10px_#00f2ff]" />
                    </div>
+                </div>
+
+                <div className="flex items-center justify-between px-1">
+                    <div className="flex items-center gap-2 cursor-pointer hover:text-white transition-colors">
+                        <HelpCircle className="w-3 h-3 text-gray-600" />
+                        <span className="text-[9px] font-bold text-gray-600 uppercase">Manual</span>
+                    </div>
+                    <div className="flex items-center gap-2 cursor-pointer hover:text-white transition-colors">
+                        <Search className="w-3 h-3 text-gray-600" />
+                        <span className="text-[9px] font-bold text-gray-600 uppercase">Search</span>
+                    </div>
                 </div>
             </div>
           </div>
@@ -314,86 +395,24 @@ export default function App() {
       </div>
 
       {educationalTip && (
-        <div className="fixed bottom-10 right-10 z-[100] max-w-sm animate-in fade-in slide-in-from-bottom-10">
-          <div className="bg-[#121216]/95 backdrop-blur-xl border border-white/10 p-6 rounded-3xl shadow-2xl relative overflow-hidden group">
-            <div className={`absolute top-0 left-0 w-1 h-full ${educationalTip.type === 'ghost' ? 'bg-neon-pink shadow-[0_0_15px_#ff00ea]' : 'bg-neon-cyan shadow-[0_0_15px_#00f2ff]'}`} />
-            <button 
-              onClick={() => setEducationalTip(null)}
-              className="absolute top-4 right-4 text-gray-600 hover:text-white transition-colors"
-            >
-              <X className="w-4 h-4" />
+        <div className="fixed bottom-10 right-10 z-[100] max-w-[280px] animate-in fade-in slide-in-from-right-10">
+          <div className="glass-panel p-4 rounded-2xl shadow-2xl relative border-white/10">
+            <div className={`absolute top-0 left-0 w-1 h-full ${educationalTip.type === 'ghost' ? 'bg-neon-pink shadow-[0_0_10px_#ff00ea]' : 'bg-neon-cyan shadow-[0_0_10px_#00f2ff]'}`} />
+            <button onClick={() => setEducationalTip(null)} className="absolute top-2 right-2 text-gray-700 hover:text-white transition-all">
+              <X className="w-3 h-3" />
             </button>
-            <div className="flex items-start gap-4">
-              <div className={`p-3 rounded-2xl ${educationalTip.type === 'ghost' ? 'bg-neon-pink/10' : 'bg-neon-cyan/10'}`}>
-                {educationalTip.type === 'ghost' ? <Ghost className="w-6 h-6 text-neon-pink animate-pulse" /> : <Zap className="w-6 h-6 text-neon-cyan brightness-125" />}
+            <div className="flex items-start gap-3">
+              <div className={`p-2 rounded-lg ${educationalTip.type === 'ghost' ? 'bg-neon-pink/10 border border-neon-pink/20' : 'bg-neon-cyan/20 border border-neon-cyan/20'}`}>
+                {educationalTip.type === 'ghost' ? <Ghost className="w-4 h-4 text-neon-pink" /> : <Zap className="w-4 h-4 text-neon-cyan" />}
               </div>
-              <div>
-                <h4 className="font-black text-xs uppercase tracking-widest text-gray-400 mb-1">{educationalTip.title}</h4>
-                <p className="text-gray-300 text-sm leading-relaxed">{educationalTip.content}</p>
+              <div className="min-w-0">
+                <h4 className={`font-black text-[9px] uppercase tracking-widest mb-1 ${educationalTip.type === 'ghost' ? 'text-neon-pink' : 'text-neon-cyan'}`}>{educationalTip.title}</h4>
+                <p className="text-gray-400 text-[11px] leading-snug line-clamp-3">{educationalTip.content}</p>
               </div>
             </div>
           </div>
         </div>
       )}
-
-      {/* Cloud Dashboard Layer */}
-      <div className="h-20 bg-black/40 backdrop-blur-2xl border-t border-white/5 flex items-center justify-between px-8 z-30">
-          <div className="flex items-center gap-8">
-              <div className="flex flex-col">
-                  <span className="text-[9px] uppercase tracking-tighter text-gray-500 font-bold">Authenticated Profile</span>
-                  {user ? (
-                      <div className="flex items-center gap-2 mt-1 px-2 py-1 bg-white/5 rounded-lg border border-white/5">
-                          <img src={user.avatar_url} className="w-6 h-6 rounded-full ring-2 ring-blue-500/20" alt="avatar" />
-                          <span className="text-sm font-semibold">{user.login}</span>
-                      </div>
-                  ) : (
-                      <span className="text-xs text-gray-500 animate-pulse">Waiting for GitHub login...</span>
-                  )}
-              </div>
-              
-              <div className="h-10 w-px bg-white/5" />
-
-              <div className="flex flex-col">
-                  <span className="text-[9px] uppercase tracking-tighter text-gray-500 font-bold">Cloud Status</span>
-                  <div className="flex items-center gap-3 mt-1">
-                      {workflows.length > 0 ? (
-                          <div className="flex items-center gap-2 text-xs font-medium text-gray-300">
-                              {workflows[0].status === 'in_progress' ? (
-                                  <Loader2 className="w-4 h-4 text-yellow-500 animate-spin" />
-                              ) : workflows[0].conclusion === 'success' ? (
-                                  <CheckCircle2 className="w-4 h-4 text-green-500" />
-                              ) : (
-                                  <div className="w-2 h-2 rounded-full bg-red-500" />
-                              )}
-                              <span>Action v{workflows[0].id.toString().substring(0,4)}</span>
-                          </div>
-                      ) : (
-                          <span className="text-xs text-gray-600 italic">No deployments detected</span>
-                      )}
-                  </div>
-              </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-              {repoUrl && (
-                  <a href={repoUrl} target="_blank" className="flex items-center gap-2 bg-white/5 hover:bg-white/10 px-4 py-2 rounded-xl text-xs font-bold transition-all border border-white/5">
-                      <Github className="w-4 h-4" /> Open GitHub
-                  </a>
-              )}
-              <button 
-                  onClick={deployToCloud}
-                  disabled={isDeploying || !user}
-                  className={`relative group overflow-hidden px-8 py-2.5 rounded-xl text-xs font-black transition-all
-                    ${isDeploying ? 'bg-yellow-600/20 text-yellow-400 border border-yellow-500/30' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/40'}
-                    ${!user ? 'opacity-30 grayscale cursor-not-allowed' : ''}`}
-                >
-                  <div className="flex items-center gap-2 relative z-10">
-                      {isDeploying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                      {isDeploying ? 'Deploying...' : 'TERBANGKAN KE CLOUD'}
-                  </div>
-              </button>
-          </div>
-      </div>
     </div>
   );
 }
