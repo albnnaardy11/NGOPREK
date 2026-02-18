@@ -4588,8 +4588,9 @@ function activate(context) {
         if (folders && folders.length > 0) {
             const terminal = vscode.window.activeTerminal || vscode.window.createTerminal('NGOPREK');
             terminal.show();
-            terminal.sendText(`git checkout -b recovered-${oid.substring(0, 7)} ${oid}`);
-            vscode.window.showInformationMessage(`Resurrecting commit ${oid.substring(0, 7)}...`);
+            const branchName = `recovered-${oid.substring(0, 7)}-${Math.floor(Date.now() / 1000)}`;
+            terminal.sendText(`git checkout -b ${branchName} ${oid}`);
+            vscode.window.showInformationMessage(`Resurrecting commit ${oid.substring(0, 7)} as ${branchName}...`);
         }
     }));
     // Watcher: Monitor .git/objects for changes
@@ -5202,15 +5203,16 @@ class ReflogHunter {
             const content = fs.readFileSync(logPath, 'utf8');
             const lines = content.trim().split('\n');
             return lines.map(line => {
-                // Format: <old-sha> <new-sha> <user> <<email>> <timestamp> <timezone> <action>: <message>
-                const match = line.match(/^([0-9a-f]{40}) ([0-9a-f]{40}) (.*?) <.*?> (\d+) (.*?) (.*?): (.*)$/);
+                // Format: <old-sha> <new-sha> <user-info> <timestamp> <timezone>\t<message>
+                // The message usually starts with an action followed by a colon, but not always.
+                const match = line.match(/^([0-9a-f]{40}) ([0-9a-f]{40}) (.*?) <.*?> (\d+) (.*?)[\t\s]+(?:(.*?): )?(.*)$/);
                 if (match) {
                     return {
                         oldSha: match[1],
                         newSha: match[2],
                         user: match[3],
                         timestamp: parseInt(match[4], 10),
-                        action: match[6],
+                        action: match[6] || 'unknown',
                         message: match[7]
                     };
                 }

@@ -244,7 +244,10 @@ export default function App() {
             className="bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-gray-900 via-black to-black"
         >
             <Background gap={20} color="#1a1a1a" size={1} />
-            <Controls className="!bg-gray-800 !border-gray-700 !fill-white" />
+            <Controls 
+              className="!bg-gray-900/60 !backdrop-blur-xl !border !border-white/10 !rounded-xl !overflow-hidden !shadow-2xl !fill-blue-400 [&_button]:!border-white/5 [&_button:hover]:!bg-white/10" 
+              showInteractive={false}
+            />
         </ReactFlow>
       </div>
 

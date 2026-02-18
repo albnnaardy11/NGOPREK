@@ -36,22 +36,60 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
+const gitEngine_1 = require("./gitEngine");
+const auth_1 = require("./auth");
+const githubService_1 = require("./githubService");
+const reflogEngine_1 = require("./reflogEngine");
+const educationalEngine_1 = require("./educationalEngine");
 function activate(context) {
     console.log('NGOPREK is now active!');
     // Register Command to Open Dashboard
-    let disposable = vscode.commands.registerCommand('ngoprek.openDashboard', () => {
+    context.subscriptions.push(vscode.commands.registerCommand('ngoprek.openDashboard', () => {
         NgoPrekPanel.createOrShow(context.extensionUri);
-    });
-    context.subscriptions.push(disposable);
+    }));
+    // Resurrection Command
+    context.subscriptions.push(vscode.commands.registerCommand('ngoprek.resurrect', async (oid) => {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders && folders.length > 0) {
+            const terminal = vscode.window.activeTerminal || vscode.window.createTerminal('NGOPREK');
+            terminal.show();
+            const branchName = `recovered-${oid.substring(0, 7)}-${Math.floor(Date.now() / 1000)}`;
+            terminal.sendText(`git checkout -b ${branchName} ${oid}`);
+            vscode.window.showInformationMessage(`Resurrecting commit ${oid.substring(0, 7)} as ${branchName}...`);
+        }
+    }));
     // Watcher: Monitor .git/objects for changes
     const gitWatcher = vscode.workspace.createFileSystemWatcher('**/.git/objects/**');
-    gitWatcher.onDidCreate(() => {
-        NgoPrekPanel.currentPanel?.sendMessage({ command: 'gitObjectChanged', text: 'New Git Object detected!' });
-        vscode.window.showInformationMessage('NGOPREK: New Git Object Detected!');
-    });
-    gitWatcher.onDidChange(() => {
-        NgoPrekPanel.currentPanel?.sendMessage({ command: 'gitObjectChanged', text: 'Git Object Changed!' });
-    });
+    const handleGitObjectChange = (uri) => {
+        try {
+            const match = uri.fsPath.match(/objects[\/\\]([0-9a-f]{2})[\/\\]([0-9a-f]{38})/i);
+            if (match) {
+                const oid = match[1] + match[2];
+                const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
+                if (workspaceFolder) {
+                    const gitObject = gitEngine_1.GitPlumbing.readObject(workspaceFolder.uri.fsPath, oid);
+                    if (gitObject) {
+                        NgoPrekPanel.currentPanel?.sendMessage({
+                            command: 'gitObjectChanged',
+                            data: gitObject
+                        });
+                        // Educational Tidbits
+                        if (gitObject.type === 'commit') {
+                            educationalEngine_1.EducationalEngine.sendTidbit(NgoPrekPanel.currentPanel, 'commit');
+                        }
+                        else if (gitObject.type === 'blob') {
+                            educationalEngine_1.EducationalEngine.sendTidbit(NgoPrekPanel.currentPanel, 'add');
+                        }
+                    }
+                }
+            }
+        }
+        catch (e) {
+            console.error("Error handling git object change:", e);
+        }
+    };
+    gitWatcher.onDidCreate(handleGitObjectChange);
+    gitWatcher.onDidChange(handleGitObjectChange);
     context.subscriptions.push(gitWatcher);
 }
 class NgoPrekPanel {
@@ -59,36 +97,117 @@ class NgoPrekPanel {
     _panel;
     _extensionUri;
     _disposables = [];
+    _githubService;
+    _pollInterval;
     constructor(panel, extensionUri) {
         this._panel = panel;
         this._extensionUri = extensionUri;
         // Set the webview's initial html content
         this._update();
         // Listen for when the panel is disposed
-        // This happens when the user closes the panel or when the panel is closed programmatically
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
         // Handle messages from the webview
-        this._panel.webview.onDidReceiveMessage(message => {
+        this._panel.webview.onDidReceiveMessage(async (message) => {
             switch (message.command) {
                 case 'alert':
                     vscode.window.showErrorMessage(message.text);
                     return;
                 case 'webviewReady':
-                    vscode.window.showInformationMessage('NGOPREK: View Ready!');
+                    this.initCloudLayer();
+                    return;
+                case 'deployToCloud':
+                    await this.handleDeploy();
+                    return;
+                case 'fetchReflog':
+                    this.handleFetchReflog();
+                    return;
+                case 'resurrectCommit':
+                    vscode.commands.executeCommand('ngoprek.resurrect', message.oid);
                     return;
             }
         }, null, this._disposables);
+    }
+    handleFetchReflog() {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders && folders.length > 0) {
+            const gitRoot = folders[0].uri.fsPath;
+            const entries = reflogEngine_1.ReflogHunter.hunt(gitRoot);
+            const ghosts = reflogEngine_1.ReflogHunter.findGhosts(entries);
+            this.sendMessage({
+                command: 'reflogData',
+                data: ghosts
+            });
+            educationalEngine_1.EducationalEngine.sendTidbit(this, 'ghost');
+        }
+    }
+    async initCloudLayer() {
+        const token = await auth_1.AuthManager.getSession();
+        if (token) {
+            this._githubService = new githubService_1.GitHubService(token.accessToken);
+            // Initial fetch
+            this.pushCloudStatus();
+            // Start polling
+            this._pollInterval = setInterval(() => {
+                this.pushCloudStatus();
+            }, 10000);
+        }
+    }
+    async pushCloudStatus() {
+        if (!this._githubService)
+            return;
+        try {
+            const user = await this._githubService.getUser();
+            // Assuming current workspace corresponds to a repo with the same name as the folder
+            // In a real app, we would parse .git/config to find the remote
+            const workspaceName = vscode.workspace.name || 'ngoprek-repo';
+            const runs = await this._githubService.getRecentWorkflowRuns(user.login, workspaceName);
+            this.sendMessage({
+                command: 'cloudStatusUpdate',
+                user: { login: user.login, avatar_url: user.avatar_url },
+                workflows: runs,
+                repoUrl: `https://github.com/${user.login}/${workspaceName}`
+            });
+        }
+        catch (e) {
+            console.error("Cloud status update failed:", e);
+        }
+    }
+    async handleDeploy() {
+        const token = await auth_1.AuthManager.getGitHubToken();
+        if (!token)
+            return;
+        this._githubService = new githubService_1.GitHubService(token);
+        const workspaceName = vscode.workspace.name || 'ngoprek-demo';
+        vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: "NGOPREK: Flying to Cloud...",
+            cancellable: false
+        }, async (progress) => {
+            try {
+                progress.report({ message: "Checking Repository..." });
+                const repoUrl = await this._githubService.createRepoIfNotExists(workspaceName, false);
+                progress.report({ message: "Enabling GitHub Pages..." });
+                // Assuming the user is the owner
+                const user = await this._githubService.getUser();
+                await this._githubService.enablePages(user.login, workspaceName);
+                progress.report({ message: `Deployed to ${repoUrl}` });
+                vscode.window.showInformationMessage(`NGOPREK: Repository Ready at ${repoUrl}`);
+                // Immediately update status
+                this.pushCloudStatus();
+            }
+            catch (error) {
+                vscode.window.showErrorMessage(`Deployment Failed: ${error.message}`);
+            }
+        });
     }
     static createOrShow(extensionUri) {
         const column = vscode.window.activeTextEditor
             ? vscode.window.activeTextEditor.viewColumn
             : undefined;
-        // If we already have a panel, show it.
         if (NgoPrekPanel.currentPanel) {
             NgoPrekPanel.currentPanel._panel.reveal(column);
             return;
         }
-        // Otherwise, create a new panel.
         const panel = vscode.window.createWebviewPanel('ngoprekDashboard', 'NGOPREK Dashboard', column || vscode.ViewColumn.One, {
             enableScripts: true,
             localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'webview-ui', 'dist')]
@@ -100,13 +219,13 @@ class NgoPrekPanel {
     }
     dispose() {
         NgoPrekPanel.currentPanel = undefined;
-        // Clean up our resources
+        if (this._pollInterval)
+            clearInterval(this._pollInterval);
         this._panel.dispose();
         while (this._disposables.length) {
             const x = this._disposables.pop();
-            if (x) {
+            if (x)
                 x.dispose();
-            }
         }
     }
     _update() {

@@ -25,15 +25,16 @@ export class ReflogHunter {
             const lines = content.trim().split('\n');
             
             return lines.map(line => {
-                // Format: <old-sha> <new-sha> <user> <<email>> <timestamp> <timezone> <action>: <message>
-                const match = line.match(/^([0-9a-f]{40}) ([0-9a-f]{40}) (.*?) <.*?> (\d+) (.*?) (.*?): (.*)$/);
+                // Format: <old-sha> <new-sha> <user-info> <timestamp> <timezone>\t<message>
+                // The message usually starts with an action followed by a colon, but not always.
+                const match = line.match(/^([0-9a-f]{40}) ([0-9a-f]{40}) (.*?) <.*?> (\d+) (.*?)[\t\s]+(?:(.*?): )?(.*)$/);
                 if (match) {
                     return {
                         oldSha: match[1],
                         newSha: match[2],
                         user: match[3],
                         timestamp: parseInt(match[4], 10),
-                        action: match[6],
+                        action: match[6] || 'unknown',
                         message: match[7]
                     };
                 }

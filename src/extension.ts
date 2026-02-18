@@ -20,8 +20,9 @@ export function activate(context: vscode.ExtensionContext) {
         if (folders && folders.length > 0) {
             const terminal = vscode.window.activeTerminal || vscode.window.createTerminal('NGOPREK');
             terminal.show();
-            terminal.sendText(`git checkout -b recovered-${oid.substring(0, 7)} ${oid}`);
-            vscode.window.showInformationMessage(`Resurrecting commit ${oid.substring(0, 7)}...`);
+            const branchName = `recovered-${oid.substring(0, 7)}-${Math.floor(Date.now() / 1000)}`;
+            terminal.sendText(`git checkout -b ${branchName} ${oid}`);
+            vscode.window.showInformationMessage(`Resurrecting commit ${oid.substring(0, 7)} as ${branchName}...`);
         }
     }));
 
