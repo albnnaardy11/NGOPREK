@@ -1,32 +1,39 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { GitPlumbing, GitObject } from './gitEngine';
+import { GitPlumbing } from './gitEngine';
 import { AuthManager } from './auth';
 import { GitHubService } from './githubService';
+import { ReflogHunter } from './reflogEngine';
+import { EducationalEngine } from './educationalEngine';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('NGOPREK is now active!');
 
     // Register Command to Open Dashboard
-    let disposable = vscode.commands.registerCommand('ngoprek.openDashboard', () => {
+    context.subscriptions.push(vscode.commands.registerCommand('ngoprek.openDashboard', () => {
         NgoPrekPanel.createOrShow(context.extensionUri);
-    });
+    }));
 
-    context.subscriptions.push(disposable);
+    // Resurrection Command
+    context.subscriptions.push(vscode.commands.registerCommand('ngoprek.resurrect', async (oid: string) => {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders && folders.length > 0) {
+            const terminal = vscode.window.activeTerminal || vscode.window.createTerminal('NGOPREK');
+            terminal.show();
+            terminal.sendText(`git checkout -b recovered-${oid.substring(0, 7)} ${oid}`);
+            vscode.window.showInformationMessage(`Resurrecting commit ${oid.substring(0, 7)}...`);
+        }
+    }));
 
     // Watcher: Monitor .git/objects for changes
     const gitWatcher = vscode.workspace.createFileSystemWatcher('**/.git/objects/**');
 
     const handleGitObjectChange = (uri: vscode.Uri) => {
         try {
-            // Extract OID from path: .git/objects/12/3456789...
-            // Win path: .git\objects\12\3456789...
             const match = uri.fsPath.match(/objects[\/\\]([0-9a-f]{2})[\/\\]([0-9a-f]{38})/i);
             
             if (match) {
                 const oid = match[1] + match[2];
-                // Find git root (assuming standard layout for now) or travel up
-                // For simplicity, we use the workspace folder logic or assume it is proportional to the uri
                 const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
                 
                 if (workspaceFolder) {
@@ -35,26 +42,15 @@ export function activate(context: vscode.ExtensionContext) {
                     if (gitObject) {
                          NgoPrekPanel.currentPanel?.sendMessage({ 
                              command: 'gitObjectChanged', 
-                             text: 'New Git Object detected!',
                              data: gitObject 
                          });
 
-                         // Sprint 4: Educational Tidbits
+                         // Educational Tidbits
                          if (gitObject.type === 'commit') {
-                             NgoPrekPanel.currentPanel?.sendMessage({
-                                 command: 'educationalTidbit',
-                                 title: 'Apa itu SHA-1?',
-                                 content: `Hash '${oid.substring(0, 7)}...' bukan sekadar nama unik. Ia adalah hasil perhitungan biner (SHA-1) dari isi file Anda. Jika isi file berubah 1 bit saja, SHA-1 akan berubah total! Inilah yang menjaga integritas data Git.`
-                             });
+                             EducationalEngine.sendTidbit(NgoPrekPanel.currentPanel, 'commit');
                          } else if (gitObject.type === 'blob') {
-                             NgoPrekPanel.currentPanel?.sendMessage({
-                                 command: 'educationalTidbit',
-                                 title: 'Blob Detected!',
-                                 content: `File Anda sekarang menjadi 'Blob' (Binary Large Object). Git tidak peduli nama file Anda saat ini, ia hanya peduli pada ISINYA yang dipadatkan ke dalam format biner ini.`
-                             });
+                             EducationalEngine.sendTidbit(NgoPrekPanel.currentPanel, 'add');
                          }
-
-                         vscode.window.showInformationMessage(`NGOPREK: Parsed ${gitObject.type} ${oid.substring(0, 7)}`);
                     }
                 }
             }
@@ -65,7 +61,6 @@ export function activate(context: vscode.ExtensionContext) {
 
     gitWatcher.onDidCreate(handleGitObjectChange);
     gitWatcher.onDidChange(handleGitObjectChange);
-
     context.subscriptions.push(gitWatcher);
 }
 
@@ -103,6 +98,9 @@ class NgoPrekPanel {
                     case 'fetchReflog':
                         this.handleFetchReflog();
                         return;
+                    case 'resurrectCommit':
+                        vscode.commands.executeCommand('ngoprek.resurrect', message.oid);
+                        return;
                 }
             },
             null,
@@ -111,15 +109,16 @@ class NgoPrekPanel {
     }
 
     private handleFetchReflog() {
-        // Assuming current workspace
         const folders = vscode.workspace.workspaceFolders;
         if (folders && folders.length > 0) {
-            const reflog = GitPlumbing.readReflog(folders[0].uri.fsPath);
+            const gitRoot = folders[0].uri.fsPath;
+            const entries = ReflogHunter.hunt(gitRoot);
+            const ghosts = ReflogHunter.findGhosts(entries);
             this.sendMessage({
                 command: 'reflogData',
-                data: reflog
+                data: ghosts
             });
-            vscode.window.showInformationMessage(`NGOPREK: Found ${reflog.length} Reflog entries!`);
+            EducationalEngine.sendTidbit(this, 'ghost');
         }
     }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import ReactFlow, {
   Controls,
   Background,
@@ -12,7 +12,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import Dagre from '@dagrejs/dagre';
-import { Cloud, Github, Loader2, CheckCircle2, Info, X } from 'lucide-react';
+import { Github, Loader2, CheckCircle2, X, Ghost, Zap } from 'lucide-react';
 
 // VS Code API wrapper
 const vscode = (window as any).acquireVsCodeApi ? (window as any).acquireVsCodeApi() : { postMessage: () => {} };
@@ -27,7 +27,7 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[]) => {
 
     edges.forEach((edge) => g.setEdge(edge.source, edge.target));
     nodes.forEach((node) => {
-        g.setNode(node.id, { width: 180, height: 100 });
+        g.setNode(node.id, { width: 220, height: 120 });
     });
 
     Dagre.layout(g);
@@ -53,16 +53,12 @@ export default function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   
-  // Cloud State
+  // States
   const [user, setUser] = useState<{login: string, avatar_url: string} | null>(null);
   const [workflows, setWorkflows] = useState<WorkflowRun[]>([]);
   const [isDeploying, setIsDeploying] = useState(false);
   const [repoUrl, setRepoUrl] = useState<string | null>(null);
-
-  // Educational State
-  const [educationalTip, setEducationalTip] = useState<{ title: string, content: string } | null>(null);
-  const [showGhostCommits, setShowGhostCommits] = useState(false);
-  const [reflogEntries, setReflogEntries] = useState<any[]>([]);
+  const [educationalTip, setEducationalTip] = useState<{ title: string, content: string, type?: string } | null>(null);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge(params, eds)),
@@ -72,11 +68,11 @@ export default function App() {
   const onEdgeClick = (_: React.MouseEvent, edge: Edge) => {
       let message = "This connects two Git objects.";
       if (edge.label === 'parent') {
-          message = "This shows evolution. The parent hash is the base for this commit.";
+          message = "History: Current commit evolves from this parent.";
       } else if (edge.label === 'root') {
-          message = "This links a commit to its file system snapshot (Root Tree).";
+          message = "Structure: This commit points to its file tree.";
       } else if (edge.label === 'contains') {
-          message = "A Tree acts like a folder containing files (blobs) or other folders (trees).";
+          message = "Composition: This folder contains this file/folder.";
       }
       vscode.postMessage({ command: 'alert', text: message });
   };
@@ -86,131 +82,114 @@ export default function App() {
       vscode.postMessage({ command: 'deployToCloud' });
   };
 
-  const fetchGhostCommits = () => {
-      setShowGhostCommits(true);
+  const toggleGhosts = () => {
       vscode.postMessage({ command: 'fetchReflog' });
   };
 
-  // Message Handling from Extension Backend
+  const resurrect = (oid: string) => {
+      vscode.postMessage({ command: 'resurrectCommit', oid });
+  };
+
+  // Node Component Logic
+  const renderNodeLabel = (node: any) => {
+      const { type, oid, content, isGhost } = node.data;
+      
+      let borderColor = '#777';
+      if (type === 'commit') borderColor = '#ff6b6b';
+      else if (type === 'tree') borderColor = '#51cf66';
+      else if (type === 'blob') borderColor = '#339af0';
+      if (isGhost) borderColor = '#a78bfa';
+
+      return (
+          <div className={`p-3 rounded-lg border-2 transition-all duration-300 ${isGhost ? 'opacity-60 bg-purple-900/40 border-dashed backdrop-blur-md' : 'bg-gray-800/80 backdrop-blur-sm'}`} style={{ borderColor }}>
+              <div className="flex justify-between items-center mb-1">
+                  <span className={`text-[10px] font-bold uppercase tracking-wider ${isGhost ? 'text-purple-300' : ''}`} style={{ color: isGhost ? undefined : borderColor }}>
+                      {isGhost && <Ghost className="inline w-3 h-3 mr-1" />}
+                      {type}
+                  </span>
+                  <span className="text-[9px] font-mono text-gray-500">{oid.substring(0, 7)}</span>
+              </div>
+              
+              <div className="text-[10px] text-gray-300 font-mono mb-2 line-clamp-2 italic">
+                  {type === 'tree' ? 'Directory Structure' : content.substring(0, 40) + '...'}
+              </div>
+
+              {isGhost && (
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); resurrect(oid); }}
+                    className="w-full py-1 mt-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-[9px] font-bold flex items-center justify-center gap-1 shadow-lg shadow-purple-900/20"
+                  >
+                      <Zap className="w-3 h-3" /> Resurrect
+                  </button>
+              )}
+          </div>
+      );
+  };
+
+  // Message Handling
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       const message = event.data;
       switch (message.command) {
-        case 'reflogData':
-            setReflogEntries(message.data);
-            break;
-
-        case 'educationalTidbit':
-            setEducationalTip({ title: message.title, content: message.content });
-            break;
-
         case 'cloudStatusUpdate':
             if (message.user) setUser(message.user);
             if (message.workflows) setWorkflows(message.workflows);
             if (message.repoUrl) setRepoUrl(message.repoUrl);
-            
-            // Check if any workflow is in progress
             const running = message.workflows?.some((w: WorkflowRun) => w.status === 'in_progress' || w.status === 'queued');
             setIsDeploying(!!running);
             break;
 
-        case 'gitObjectChanged':
-            // ... (Existing git object logic)
-             if (message.data) {
-                const { type, oid, content, parents, tree, entries } = message.data;
-                
-                // Determine styling based on type
-                let bg = '#1e1e1e';
-                let borderColor = '#777';
-                let labelColor = '#fff';
+        case 'educationalTidbit':
+            setEducationalTip({ title: message.title, content: message.content, type: message.type });
+            break;
 
-                if (type === 'commit') {
-                    bg = '#5c2b29'; // Reddish
-                    borderColor = '#ff6b6b';
-                    labelColor = '#ffc9c9';
-                } else if (type === 'tree') {
-                    bg = '#2b5c38'; // Greenish
-                    borderColor = '#51cf66';
-                    labelColor = '#d3f9d8';
-                } else if (type === 'blob') {
-                    bg = '#1c3e5e'; // Blueish
-                    borderColor = '#339af0';
-                    labelColor = '#d0ebff';
+        case 'reflogData':
+            console.log("Reflog Data:", message.data);
+            const ghostNodes: Node[] = message.data.map((entry: any) => ({
+                id: `ghost-${entry.newSha}`,
+                position: { x: Math.random() * 500, y: Math.random() * 500 },
+                data: { 
+                    type: 'commit', 
+                    oid: entry.newSha, 
+                    content: entry.message, 
+                    isGhost: true 
                 }
+            }));
+            
+            setNodes((nds) => {
+                const existingIds = new Set(nds.map(n => n.id));
+                const newGhosts = ghostNodes.filter(n => !existingIds.has(n.id));
+                return nds.concat(newGhosts);
+            });
+            break;
 
+        case 'gitObjectChanged':
+            if (message.data) {
+                const { type, oid, content, parents, tree, entries } = message.data;
                 const newNode: Node = {
                     id: oid,
-                    position: { x: 0, y: 0 }, 
-                    data: { 
-                        label: (
-                            <div className="p-2 rounded text-xs">
-                                <strong className="uppercase block mb-1" style={{ color: borderColor }}>{type}</strong>
-                                <div className="text-gray-300 text-[10px] mb-1">{oid.substring(0, 7)}</div>
-                                <div className="max-h-20 overflow-auto whitespace-pre-wrap font-mono text-[9px] opacity-80" style={{ color: labelColor }}>
-                                    {type === 'tree' ? 'Folder Structure' : content.substring(0, 50) + (content.length > 50 ? '...' : '')}
-                                </div>
-                            </div>
-                        ) 
-                    },
-                    style: { 
-                        border: `1px solid ${borderColor}`, 
-                        padding: 0,
-                        background: bg,
-                        color: labelColor,
-                        width: 170
-                    },
+                    position: { x: 0, y: 0 },
+                    data: { type, oid, content, parents, tree, entries, isGhost: false }
                 };
 
-                // Generate Edges
                 const newEdges: Edge[] = [];
-                
                 if (type === 'commit') {
-                    if (parents && parents.length > 0) {
-                        parents.forEach((parentOid: string) => {
-                            newEdges.push({
-                                id: `${oid}-parent-${parentOid}`,
-                                source: oid,
-                                target: parentOid,
-                                label: 'parent',
-                                animated: true,
-                                style: { stroke: '#ff6b6b' },
-                                markerEnd: { type: MarkerType.ArrowClosed, color: '#ff6b6b' },
-                            });
-                        });
-                    }
-                    if (tree) {
-                         newEdges.push({
-                            id: `${oid}-root-${tree}`,
-                            source: oid,
-                            target: tree,
-                            label: 'root',
-                            animated: true, 
-                            style: { stroke: '#51cf66' },
-                            markerEnd: { type: MarkerType.ArrowClosed, color: '#51cf66' },
-                        });
-                    }
-                } else if (type === 'tree' && entries) {
-                    entries.forEach((entry: any) => {
-                        newEdges.push({
-                            id: `${oid}-contains-${entry.oid}`,
-                            source: oid,
-                            target: entry.oid,
-                            label: 'contains',
-                            animated: false,
-                            style: { stroke: '#339af0' },
-                            markerEnd: { type: MarkerType.ArrowClosed, color: '#339af0' },
-                        });
+                    if (parents) parents.forEach((p: string) => newEdges.push({
+                        id: `${oid}-parent-${p}`, source: oid, target: p, label: 'parent', animated: true, style: { stroke: '#ff6b6b' }, markerEnd: { type: MarkerType.ArrowClosed, color: '#ff6b6b' }
+                    }));
+                    if (tree) newEdges.push({
+                        id: `${oid}-root-${tree}`, source: oid, target: tree, label: 'root', animated: true, style: { stroke: '#51cf66' }, markerEnd: { type: MarkerType.ArrowClosed, color: '#51cf66' }
                     });
+                } else if (type === 'tree' && entries) {
+                    entries.forEach((e: any) => newEdges.push({
+                        id: `${oid}-contains-${e.oid}`, source: oid, target: e.oid, label: 'contains', style: { stroke: '#339af0' }, markerEnd: { type: MarkerType.ArrowClosed, color: '#339af0' }
+                    }));
                 }
 
-                setNodes((nds) => {
-                    if (nds.find(n => n.id === oid)) return nds;
-                    return nds.concat(newNode);
-                });
-
+                setNodes((nds) => nds.find(n => n.id === oid) ? nds : nds.concat(newNode));
                 setEdges((eds) => {
-                    const uniqueNewEdges = newEdges.filter(ne => !eds.find(e => e.id === ne.id));
-                    return eds.concat(uniqueNewEdges);
+                    const uniqueNew = newEdges.filter(ne => !eds.find(e => e.id === ne.id));
+                    return eds.concat(uniqueNew);
                 });
             }
             break;
@@ -218,185 +197,136 @@ export default function App() {
     };
 
     window.addEventListener('message', handleMessage);
-    vscode.postMessage({ command: 'webviewReady', text: 'React Webview Initialized' });
+    vscode.postMessage({ command: 'webviewReady' });
     return () => window.removeEventListener('message', handleMessage);
   }, [setNodes, setEdges]);
-  
+
+  // Wrap nodes to include custom label rendering
+  const styledNodes = useMemo(() => nodes.map(n => ({
+      ...n,
+      data: { ...n.data, label: renderNodeLabel(n) }
+  })), [nodes]);
+
   const onLayout = useCallback(() => {
       const layouted = getLayoutedElements(nodes, edges);
       setNodes([...layouted.nodes]);
       setEdges([...layouted.edges]);
   }, [nodes, edges, setNodes, setEdges]);
 
-
   return (
-    <div style={{ width: '100vw', height: '100vh' }} className="bg-gray-900 text-white flex flex-col">
-      {/* HUD Overlay */}
-      <div className="absolute top-4 left-4 z-10 bg-black/50 p-2 rounded flex flex-col gap-2 backdrop-blur-sm border border-white/10">
-        <div>
-            <h1 className="text-xl font-bold text-blue-400">NGOPREK Dashboard</h1>
-            <p className="text-sm text-gray-400">Layer 1: Git Object Visualizer</p>
+    <div className="w-screen h-screen bg-[#0d1117] text-white flex flex-col font-sans overflow-hidden">
+      {/* Glassmorphism HUD */}
+      <div className="absolute top-6 left-6 z-20 flex flex-col gap-4">
+        <div className="bg-white/5 backdrop-blur-md border border-white/10 p-5 rounded-2xl shadow-2xl">
+            <h1 className="text-2xl font-black bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">NGOPREK</h1>
+            <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">Git Educational OS v1.0</p>
+            
+            <div className="mt-4 flex gap-2">
+                <button onClick={onLayout} className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/40 border border-blue-500/30 rounded-xl text-xs font-bold transition-all backdrop-blur-sm">
+                    Optimize Graph
+                </button>
+                <button onClick={toggleGhosts} className="px-4 py-2 bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-2 backdrop-blur-sm">
+                    <Ghost className="w-3 h-3 text-purple-400" /> Hunt Ghosts
+                </button>
+            </div>
         </div>
-        <button onClick={onLayout} className="px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded text-xs font-bold text-white transition shadow-lg border border-blue-400/20">
-            Auto Layout
-        </button>
-        <button onClick={fetchGhostCommits} className="px-3 py-1 bg-purple-600 hover:bg-purple-500 rounded text-xs font-bold text-white transition shadow-lg border border-purple-400/20 flex items-center gap-1">
-            <Loader2 className={`w-3 h-3 ${showGhostCommits && reflogEntries.length === 0 ? 'animate-spin' : ''}`} />
-            Hantu Commit (Reflog)
-        </button>
       </div>
 
-      {/* Ghost Commits (Reflog) Sidebar/Modal */}
-      {showGhostCommits && (
-          <div className="absolute top-0 right-0 w-80 h-full bg-gray-900/90 border-l border-purple-500/30 backdrop-blur-xl z-[90] p-4 flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
-              <div className="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                  <h2 className="text-lg font-bold text-purple-400">Reflog History</h2>
-                  <button onClick={() => setShowGhostCommits(false)} className="text-gray-400 hover:text-white">
-                      <X className="w-5 h-5" />
-                  </button>
-              </div>
-              <p className="text-[10px] text-gray-400 mb-4 italic">
-                  *Ini adalah sejarah HEAD. Kamu bisa menemukan commit yang terhapus di sini.
-              </p>
-              <div className="flex-grow overflow-auto space-y-2 pr-2">
-                  {reflogEntries.map((entry, idx) => (
-                      <div key={idx} className="bg-gray-800/50 p-2 rounded border border-gray-700 hover:border-purple-500/50 transition cursor-default group">
-                          <div className="flex justify-between items-start mb-1">
-                              <span className="text-[9px] font-mono text-purple-300 bg-purple-500/10 px-1 rounded">{entry.newSha.substring(0, 7)}</span>
-                              <button 
-                                onClick={() => {
-                                    // Trigger resurrection by telling backend to read this object
-                                    // Normally would be a git reset, but here we just want to ADD it to visualization
-                                    vscode.postMessage({ command: 'alert', text: `Resurrecting ${entry.newSha.substring(0, 7)}... Check backend logs!` });
-                                }}
-                                className="hidden group-hover:block text-[9px] bg-purple-600 text-white px-1 rounded hover:bg-purple-500"
-                              >
-                                  Resurrect
-                              </button>
-                          </div>
-                          <div className="text-[10px] text-gray-300 line-clamp-2">{entry.message}</div>
-                      </div>
-                  ))}
-              </div>
-          </div>
-      )}
-
-      {/* Main Graph Area */}
-      <div className="flex-grow relative">
+      <div className="flex-grow">
         <ReactFlow
-            nodes={nodes}
+            nodes={styledNodes}
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onEdgeClick={onEdgeClick}
             fitView
+            className="bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-gray-900 via-black to-black"
         >
-            <Background gap={16} color="#333" />
-            <Controls />
+            <Background gap={20} color="#1a1a1a" size={1} />
+            <Controls className="!bg-gray-800 !border-gray-700 !fill-white" />
         </ReactFlow>
       </div>
 
-      {/* Educational Tip Modal */}
+      {/* Educational Tidbit - Floating Card */}
       {educationalTip && (
-          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md p-8 animate-in fade-in zoom-in duration-300">
-              <div className="max-w-md bg-gray-800 border border-blue-500/30 rounded-xl shadow-2xl p-6 relative overflow-hidden">
-                  <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
-                  <button 
-                    onClick={() => setEducationalTip(null)}
-                    className="absolute top-4 right-4 text-gray-400 hover:text-white"
-                  >
-                      <X className="w-5 h-5" />
+          <div className="fixed bottom-24 right-6 max-w-sm z-50 animate-in slide-in-from-bottom-5 fade-in duration-500">
+              <div className="bg-gray-900/90 backdrop-blur-xl border border-blue-500/20 p-6 rounded-2xl shadow-[0_0_50px_-12px_rgba(59,130,246,0.5)] relative overflow-hidden group">
+                  <div className={`absolute top-0 left-0 w-1.5 h-full ${educationalTip.type === 'success' ? 'bg-green-500' : 'bg-blue-500'}`} />
+                  <button onClick={() => setEducationalTip(null)} className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors">
+                      <X className="w-4 h-4" />
                   </button>
-                  <div className="flex items-center gap-3 mb-4">
-                      <div className="bg-blue-500/20 p-2 rounded-lg">
-                        <Info className="w-6 h-6 text-blue-400" />
+                  <div className="flex items-center gap-3 mb-3">
+                      <div className="p-1.5 rounded-lg bg-blue-500/10">
+                        <Zap className="w-5 h-5 text-blue-400" />
                       </div>
-                      <h2 className="text-xl font-bold text-white">{educationalTip.title}</h2>
+                      <h3 className="text-lg font-bold text-white">{educationalTip.title}</h3>
                   </div>
-                  <div className="text-gray-300 leading-relaxed font-serif italic text-lg whitespace-pre-wrap">
-                      "{educationalTip.content}"
-                  </div>
-                  <div className="mt-6 flex justify-end">
-                      <button 
-                        onClick={() => setEducationalTip(null)}
-                        className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition-all transform hover:scale-105 active:scale-95"
-                      >
-                          Saya Mengerti!
+                  <p className="text-sm text-gray-400 leading-relaxed italic">"{educationalTip.content}"</p>
+                  <div className="mt-4 flex justify-end">
+                      <button onClick={() => setEducationalTip(null)} className="text-[10px] font-bold text-blue-400 hover:text-blue-300 uppercase tracking-widest">
+                          Dismiss
                       </button>
                   </div>
               </div>
           </div>
       )}
 
-      {/* Cloud Layer (Bottom Panel) */}
-      <div className="h-16 bg-gray-800 border-t border-gray-700 flex items-center justify-between px-4 z-20">
-          <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                  <Cloud className="w-5 h-5 text-blue-400" />
-                  <span className="font-bold text-sm">Layer 3: The Cloud</span>
+      {/* Cloud Dashboard Layer */}
+      <div className="h-20 bg-black/40 backdrop-blur-2xl border-t border-white/5 flex items-center justify-between px-8 z-30">
+          <div className="flex items-center gap-8">
+              <div className="flex flex-col">
+                  <span className="text-[9px] uppercase tracking-tighter text-gray-500 font-bold">Authenticated Profile</span>
+                  {user ? (
+                      <div className="flex items-center gap-2 mt-1 px-2 py-1 bg-white/5 rounded-lg border border-white/5">
+                          <img src={user.avatar_url} className="w-6 h-6 rounded-full ring-2 ring-blue-500/20" alt="avatar" />
+                          <span className="text-sm font-semibold">{user.login}</span>
+                      </div>
+                  ) : (
+                      <span className="text-xs text-gray-500 animate-pulse">Waiting for GitHub login...</span>
+                  )}
               </div>
               
-              {user ? (
-                  <div className="flex items-center gap-2 bg-gray-700 px-3 py-1 rounded-full">
-                      <img src={user.avatar_url} className="w-5 h-5 rounded-full" alt="avatar" />
-                      <span className="text-xs text-white">{user.login}</span>
+              <div className="h-10 w-px bg-white/5" />
+
+              <div className="flex flex-col">
+                  <span className="text-[9px] uppercase tracking-tighter text-gray-500 font-bold">Cloud Status</span>
+                  <div className="flex items-center gap-3 mt-1">
+                      {workflows.length > 0 ? (
+                          <div className="flex items-center gap-2 text-xs font-medium text-gray-300">
+                              {workflows[0].status === 'in_progress' ? (
+                                  <Loader2 className="w-4 h-4 text-yellow-500 animate-spin" />
+                              ) : workflows[0].conclusion === 'success' ? (
+                                  <CheckCircle2 className="w-4 h-4 text-green-500" />
+                              ) : (
+                                  <div className="w-2 h-2 rounded-full bg-red-500" />
+                              )}
+                              <span>Action v{workflows[0].id.toString().substring(0,4)}</span>
+                          </div>
+                      ) : (
+                          <span className="text-xs text-gray-600 italic">No deployments detected</span>
+                      )}
                   </div>
-              ) : (
-                  <span className="text-xs text-gray-400 italic">Not logged in</span>
-              )}
+              </div>
           </div>
 
           <div className="flex items-center gap-4">
-              {/* Status Indicators */}
-              <div className="flex items-center gap-2">
-                  {workflows.slice(0, 1).map(run => (
-                      <div key={run.id} className="flex items-center gap-1 text-xs">
-                          {run.status === 'in_progress' || run.status === 'queued' ? (
-                              <Loader2 className="w-4 h-4 text-yellow-500 animate-spin" />
-                          ) : run.conclusion === 'success' ? (
-                              <CheckCircle2 className="w-4 h-4 text-green-500" />
-                          ) : (
-                              <div className="w-2 h-2 rounded-full bg-red-500" />
-                          )}
-                          <a href={run.html_url} target="_blank" className="hover:underline text-gray-300">
-                              {run.name}
-                          </a>
-                      </div>
-                  ))}
-              </div>
-
               {repoUrl && (
-                  <a 
-                    href={repoUrl} 
-                    target="_blank" 
-                    className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 transition bg-blue-400/10 px-2 py-1 rounded border border-blue-400/20"
-                  >
-                      <Github className="w-3 h-3" />
-                      View Repo
+                  <a href={repoUrl} target="_blank" className="flex items-center gap-2 bg-white/5 hover:bg-white/10 px-4 py-2 rounded-xl text-xs font-bold transition-all border border-white/5">
+                      <Github className="w-4 h-4" /> Open GitHub
                   </a>
               )}
-
-               {/* Deploy Button */}
               <button 
-                onClick={deployToCloud}
-                disabled={isDeploying || !user}
-                className={`flex items-center gap-2 px-4 py-2 rounded font-bold text-xs transition
-                    ${isDeploying ? 'bg-yellow-600 cursor-wait' : 'bg-green-600 hover:bg-green-500'}
-                    ${!user ? 'opacity-50 cursor-not-allowed' : ''}
-                `}
-              >
-                  {isDeploying ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Deploying...
-                      </>
-                  ) : (
-                      <>
-                        <Github className="w-4 h-4" />
-                        Terbangkan ke Cloud
-                      </>
-                  )}
+                  onClick={deployToCloud}
+                  disabled={isDeploying || !user}
+                  className={`relative group overflow-hidden px-8 py-2.5 rounded-xl text-xs font-black transition-all
+                    ${isDeploying ? 'bg-yellow-600/20 text-yellow-400 border border-yellow-500/30' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/40'}
+                    ${!user ? 'opacity-30 grayscale cursor-not-allowed' : ''}`}
+                >
+                  <div className="flex items-center gap-2 relative z-10">
+                      {isDeploying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                      {isDeploying ? 'Deploying...' : 'TERBANGKAN KE CLOUD'}
+                  </div>
               </button>
           </div>
       </div>

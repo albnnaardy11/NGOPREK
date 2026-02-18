@@ -4482,6 +4482,50 @@ exports.AuthManager = AuthManager;
 
 /***/ },
 
+/***/ "./src/educationalEngine.ts"
+/*!**********************************!*\
+  !*** ./src/educationalEngine.ts ***!
+  \**********************************/
+(__unused_webpack_module, exports) {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.EducationalEngine = void 0;
+class EducationalEngine {
+    static tidbits = {
+        'add': {
+            title: 'Hashing Biner (SHA-1)',
+            content: 'Git baru saja membuat SHA-1 hash untuk file ini. File Anda sekarang disimpan sebagai "Blob" di dalam folder .git/objects. Git tidak peduli nama filenya, ia hanya peduli pada isinya!',
+            type: 'info'
+        },
+        'commit': {
+            title: 'Snapshot Permanen Locked!',
+            content: 'Commit dibuat! Git menyatukan "Tree" (struktur folder) dengan pesan Anda menjadi satu "Commit Object". Ini adalah titik sejarah yang permanen dan tidak bisa diubah (immutable).',
+            type: 'success'
+        },
+        'ghost': {
+            title: 'Hantu Commit Ditemukan!',
+            content: 'Ini adalah hantu dari masa lalu. Commit ini terhapus atau tertinggal saat Anda melakukan reset atau checkout. Berkat Reflog, kita bisa membangkitkannya kembali!',
+            type: 'warning'
+        }
+    };
+    static getTidbit(action) {
+        return this.tidbits[action];
+    }
+    static sendTidbit(panel, action) {
+        const tidbit = this.getTidbit(action);
+        panel.sendMessage({
+            command: 'educationalTidbit',
+            ...tidbit
+        });
+    }
+}
+exports.EducationalEngine = EducationalEngine;
+
+
+/***/ },
+
 /***/ "./src/extension.ts"
 /*!**************************!*\
   !*** ./src/extension.ts ***!
@@ -4530,49 +4574,46 @@ const vscode = __importStar(__webpack_require__(/*! vscode */ "vscode"));
 const gitEngine_1 = __webpack_require__(/*! ./gitEngine */ "./src/gitEngine.ts");
 const auth_1 = __webpack_require__(/*! ./auth */ "./src/auth.ts");
 const githubService_1 = __webpack_require__(/*! ./githubService */ "./src/githubService.ts");
+const reflogEngine_1 = __webpack_require__(/*! ./reflogEngine */ "./src/reflogEngine.ts");
+const educationalEngine_1 = __webpack_require__(/*! ./educationalEngine */ "./src/educationalEngine.ts");
 function activate(context) {
     console.log('NGOPREK is now active!');
     // Register Command to Open Dashboard
-    let disposable = vscode.commands.registerCommand('ngoprek.openDashboard', () => {
+    context.subscriptions.push(vscode.commands.registerCommand('ngoprek.openDashboard', () => {
         NgoPrekPanel.createOrShow(context.extensionUri);
-    });
-    context.subscriptions.push(disposable);
+    }));
+    // Resurrection Command
+    context.subscriptions.push(vscode.commands.registerCommand('ngoprek.resurrect', async (oid) => {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders && folders.length > 0) {
+            const terminal = vscode.window.activeTerminal || vscode.window.createTerminal('NGOPREK');
+            terminal.show();
+            terminal.sendText(`git checkout -b recovered-${oid.substring(0, 7)} ${oid}`);
+            vscode.window.showInformationMessage(`Resurrecting commit ${oid.substring(0, 7)}...`);
+        }
+    }));
     // Watcher: Monitor .git/objects for changes
     const gitWatcher = vscode.workspace.createFileSystemWatcher('**/.git/objects/**');
     const handleGitObjectChange = (uri) => {
         try {
-            // Extract OID from path: .git/objects/12/3456789...
-            // Win path: .git\objects\12\3456789...
             const match = uri.fsPath.match(/objects[\/\\]([0-9a-f]{2})[\/\\]([0-9a-f]{38})/i);
             if (match) {
                 const oid = match[1] + match[2];
-                // Find git root (assuming standard layout for now) or travel up
-                // For simplicity, we use the workspace folder logic or assume it is proportional to the uri
                 const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
                 if (workspaceFolder) {
                     const gitObject = gitEngine_1.GitPlumbing.readObject(workspaceFolder.uri.fsPath, oid);
                     if (gitObject) {
                         NgoPrekPanel.currentPanel?.sendMessage({
                             command: 'gitObjectChanged',
-                            text: 'New Git Object detected!',
                             data: gitObject
                         });
-                        // Sprint 4: Educational Tidbits
+                        // Educational Tidbits
                         if (gitObject.type === 'commit') {
-                            NgoPrekPanel.currentPanel?.sendMessage({
-                                command: 'educationalTidbit',
-                                title: 'Apa itu SHA-1?',
-                                content: `Hash '${oid.substring(0, 7)}...' bukan sekadar nama unik. Ia adalah hasil perhitungan biner (SHA-1) dari isi file Anda. Jika isi file berubah 1 bit saja, SHA-1 akan berubah total! Inilah yang menjaga integritas data Git.`
-                            });
+                            educationalEngine_1.EducationalEngine.sendTidbit(NgoPrekPanel.currentPanel, 'commit');
                         }
                         else if (gitObject.type === 'blob') {
-                            NgoPrekPanel.currentPanel?.sendMessage({
-                                command: 'educationalTidbit',
-                                title: 'Blob Detected!',
-                                content: `File Anda sekarang menjadi 'Blob' (Binary Large Object). Git tidak peduli nama file Anda saat ini, ia hanya peduli pada ISINYA yang dipadatkan ke dalam format biner ini.`
-                            });
+                            educationalEngine_1.EducationalEngine.sendTidbit(NgoPrekPanel.currentPanel, 'add');
                         }
-                        vscode.window.showInformationMessage(`NGOPREK: Parsed ${gitObject.type} ${oid.substring(0, 7)}`);
                     }
                 }
             }
@@ -4614,19 +4655,23 @@ class NgoPrekPanel {
                 case 'fetchReflog':
                     this.handleFetchReflog();
                     return;
+                case 'resurrectCommit':
+                    vscode.commands.executeCommand('ngoprek.resurrect', message.oid);
+                    return;
             }
         }, null, this._disposables);
     }
     handleFetchReflog() {
-        // Assuming current workspace
         const folders = vscode.workspace.workspaceFolders;
         if (folders && folders.length > 0) {
-            const reflog = gitEngine_1.GitPlumbing.readReflog(folders[0].uri.fsPath);
+            const gitRoot = folders[0].uri.fsPath;
+            const entries = reflogEngine_1.ReflogHunter.hunt(gitRoot);
+            const ghosts = reflogEngine_1.ReflogHunter.findGhosts(entries);
             this.sendMessage({
                 command: 'reflogData',
-                data: reflog
+                data: ghosts
             });
-            vscode.window.showInformationMessage(`NGOPREK: Found ${reflog.length} Reflog entries!`);
+            educationalEngine_1.EducationalEngine.sendTidbit(this, 'ghost');
         }
     }
     async initCloudLayer() {
@@ -5095,6 +5140,104 @@ class GitHubService {
     }
 }
 exports.GitHubService = GitHubService;
+
+
+/***/ },
+
+/***/ "./src/reflogEngine.ts"
+/*!*****************************!*\
+  !*** ./src/reflogEngine.ts ***!
+  \*****************************/
+(__unused_webpack_module, exports, __webpack_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.ReflogHunter = void 0;
+const fs = __importStar(__webpack_require__(/*! fs */ "fs"));
+const path = __importStar(__webpack_require__(/*! path */ "path"));
+class ReflogHunter {
+    /**
+     * Reads the .git/logs/HEAD file and parses its content.
+     */
+    static hunt(gitRoot) {
+        const logPath = path.join(gitRoot, '.git', 'logs', 'HEAD');
+        if (!fs.existsSync(logPath)) {
+            return [];
+        }
+        try {
+            const content = fs.readFileSync(logPath, 'utf8');
+            const lines = content.trim().split('\n');
+            return lines.map(line => {
+                // Format: <old-sha> <new-sha> <user> <<email>> <timestamp> <timezone> <action>: <message>
+                const match = line.match(/^([0-9a-f]{40}) ([0-9a-f]{40}) (.*?) <.*?> (\d+) (.*?) (.*?): (.*)$/);
+                if (match) {
+                    return {
+                        oldSha: match[1],
+                        newSha: match[2],
+                        user: match[3],
+                        timestamp: parseInt(match[4], 10),
+                        action: match[6],
+                        message: match[7]
+                    };
+                }
+                return null;
+            }).filter((entry) => entry !== null).reverse();
+        }
+        catch (error) {
+            console.error('Failed to hunt reflog:', error);
+            return [];
+        }
+    }
+    /**
+     * Identifies dangling commits (commits in reflog not reachable from common refs).
+     * For now, we'll treat any reflog entry as a potential ghost.
+     */
+    static findGhosts(entries) {
+        // Simple logic: unique newShas in reflog
+        const seen = new Set();
+        return entries.filter(e => {
+            if (seen.has(e.newSha))
+                return false;
+            seen.add(e.newSha);
+            return true;
+        });
+    }
+}
+exports.ReflogHunter = ReflogHunter;
 
 
 /***/ },
