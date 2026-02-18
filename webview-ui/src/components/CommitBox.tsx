@@ -1,17 +1,14 @@
-import React, { useState } from 'react';
-import { Send, Hash } from 'lucide-react';
+import { useState } from 'react';
 
 interface CommitBoxProps {
     onCommit: (message: string) => void;
 }
 
 const PREFIXES = [
-    { id: 'feat', label: 'Feat', color: 'bg-green-500/20 text-green-400 border-green-500/30' },
-    { id: 'fix', label: 'Fix', color: 'bg-red-500/20 text-red-400 border-red-500/30' },
-    { id: 'sty', label: 'Style', color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
-    { id: 'ref', label: 'Refactor', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
-    { id: 'perf', label: 'Perf', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
-    { id: 'cho', label: 'Chore', color: 'bg-gray-500/20 text-gray-400 border-gray-500/30' },
+    { id: 'feat', label: 'Feat', color: 'border-green-500 text-green-500' },
+    { id: 'fix', label: 'Fix', color: 'border-red-500 text-red-500' },
+    { id: 'ref', label: 'Ref', color: 'border-yellow-500 text-yellow-500' },
+    { id: 'perf', label: 'Perf', color: 'border-blue-500 text-blue-500' },
 ];
 
 export const CommitBox: React.FC<CommitBoxProps> = ({ onCommit }) => {
@@ -25,38 +22,36 @@ export const CommitBox: React.FC<CommitBoxProps> = ({ onCommit }) => {
     };
 
     return (
-        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl">
-            <div className="flex items-center gap-2 mb-4">
-                <div className="p-1.5 rounded-lg bg-blue-500/20">
-                    <Hash className="w-4 h-4 text-blue-400" />
-                </div>
-                <h3 className="text-sm font-bold uppercase tracking-widest text-gray-400">Conventional Architect</h3>
+        <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">Commit Architect</span>
+                <div className="w-10 h-1 bg-white/5 rounded-full" />
             </div>
 
-            <div className="grid grid-cols-3 gap-2 mb-4">
+            <div className="flex gap-3 justify-center py-2">
                 {PREFIXES.map((p) => (
                     <button
                         key={p.id}
                         onClick={() => setSelectedPrefix(p.id)}
-                        className={`px-3 py-1.5 rounded-xl text-[10px] font-black border transition-all
-                            ${selectedPrefix === p.id ? p.color : 'bg-transparent text-gray-500 border-white/5 hover:border-white/20'}
+                        className={`w-9 h-9 rounded-full border-2 text-[8px] font-black uppercase transition-all flex items-center justify-center
+                            ${selectedPrefix === p.id ? `${p.color} bg-white/5 shadow-[0_0_10px_currentColor]` : 'border-white/10 text-gray-600 hover:border-white/30'}
                         `}
                     >
-                        {p.label}
+                        {p.id}
                     </button>
                 ))}
             </div>
 
-            <div className="relative group">
-                <div className="absolute top-1/2 -translate-y-1/2 left-4 text-blue-400/50 font-mono text-xs">
-                    {selectedPrefix}:
+            <div className="bg-black/40 border border-white/5 rounded-xl p-3 backdrop-blur-md">
+                <div className="text-[9px] font-mono text-blue-400/50 mb-1 uppercase tracking-tighter">
+                   Message for {selectedPrefix}:
                 </div>
                 <input
                     type="text"
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
-                    placeholder="Apa yang kamu lakukan?"
-                    className="w-full bg-black/20 border border-white/5 rounded-xl py-3 pl-14 pr-4 text-sm focus:border-blue-500/50 outline-none transition-all placeholder:text-gray-600"
+                    placeholder="Enter commit details..."
+                    className="w-full bg-transparent text-sm focus:outline-none placeholder:text-gray-700 font-mono"
                     onKeyDown={(e) => e.key === 'Enter' && handleCommit()}
                 />
             </div>
@@ -64,11 +59,12 @@ export const CommitBox: React.FC<CommitBoxProps> = ({ onCommit }) => {
             <button
                 onClick={handleCommit}
                 disabled={!message}
-                className={`w-full mt-4 py-3 rounded-xl flex items-center justify-center gap-2 text-xs font-black transition-all
-                    ${message ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/40' : 'bg-white/5 text-gray-600 cursor-not-allowed'}
+                className={`group relative w-full h-12 rounded-xl text-xs font-black uppercase tracking-[0.2em] transition-all overflow-hidden
+                    ${message ? 'bg-green-500 text-black shadow-[0_0_20px_rgba(57,255,20,0.3)] hover:scale-[1.02]' : 'bg-white/5 text-gray-600 cursor-not-allowed'}
                 `}
             >
-                <Send className="w-4 h-4" /> COMMIT CHANGE
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+                Commit
             </button>
         </div>
     );

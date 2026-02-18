@@ -12,10 +12,11 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import Dagre from '@dagrejs/dagre';
-import { Github, Loader2, CheckCircle2, X, Ghost, Zap } from 'lucide-react';
+import { Github, Loader2, CheckCircle2, X, Zap, Box, Terminal, Layers, Ghost } from 'lucide-react';
 import { CommitBox } from './components/CommitBox';
 import { FileManager, FileItem } from './components/FileManager';
 import { Toolbar } from './components/Toolbar';
+import { Sidebar } from './components/Sidebar';
 
 // VS Code API wrapper
 const vscode = (window as any).acquireVsCodeApi ? (window as any).acquireVsCodeApi() : { postMessage: () => {} };
@@ -69,18 +70,6 @@ export default function App() {
     [setEdges],
   );
 
-  const onEdgeClick = (_: React.MouseEvent, edge: Edge) => {
-      let message = "This connects two Git objects.";
-      if (edge.label === 'parent') {
-          message = "History: Current commit evolves from this parent.";
-      } else if (edge.label === 'root') {
-          message = "Structure: This commit points to its file tree.";
-      } else if (edge.label === 'contains') {
-          message = "Composition: This folder contains this file/folder.";
-      }
-      vscode.postMessage({ command: 'alert', text: message });
-  };
-
   const deployToCloud = () => {
       setIsDeploying(true);
       vscode.postMessage({ command: 'deployToCloud' });
@@ -101,41 +90,42 @@ export default function App() {
   const gitPush = () => vscode.postMessage({ command: 'gitPush' });
   const openGitk = () => vscode.postMessage({ command: 'openGitk' });
 
-  // Node Component Logic
-  const renderNodeLabel = (node: any) => {
-      const { type, oid, content, isGhost } = node.data;
-      
-      let borderColor = '#777';
-      if (type === 'commit') borderColor = '#ff6b6b';
-      else if (type === 'tree') borderColor = '#51cf66';
-      else if (type === 'blob') borderColor = '#339af0';
-      if (isGhost) borderColor = '#a78bfa';
-
-      return (
-          <div className={`p-3 rounded-lg border-2 transition-all duration-300 ${isGhost ? 'opacity-60 bg-purple-900/40 border-dashed backdrop-blur-md' : 'bg-gray-800/80 backdrop-blur-sm'}`} style={{ borderColor }}>
-              <div className="flex justify-between items-center mb-1">
-                  <span className={`text-[10px] font-bold uppercase tracking-wider ${isGhost ? 'text-purple-300' : ''}`} style={{ color: isGhost ? undefined : borderColor }}>
-                      {isGhost && <Ghost className="inline w-3 h-3 mr-1" />}
-                      {type}
-                  </span>
-                  <span className="text-[9px] font-mono text-gray-500">{oid.substring(0, 7)}</span>
-              </div>
-              
-              <div className="text-[10px] text-gray-300 font-mono mb-2 line-clamp-2 italic">
-                  {type === 'tree' ? 'Directory Structure' : content.substring(0, 40) + '...'}
-              </div>
-
-              {isGhost && (
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); resurrect(oid); }}
-                    className="w-full py-1 mt-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-[9px] font-bold flex items-center justify-center gap-1 shadow-lg shadow-purple-900/20"
-                  >
-                      <Zap className="w-3 h-3" /> Resurrect
-                  </button>
-              )}
-          </div>
-      );
+  // Custom Node Styling
+  const CustomNode = ({ data }: any) => {
+    const isGhost = data.isGhost;
+    return (
+      <div className={`p-4 min-w-[150px] bg-[#121216]/90 backdrop-blur-md rounded-lg border transition-all duration-500
+        ${isGhost ? 'neon-border-pink border-neon-pink/50' : 'neon-border-cyan border-neon-cyan/50'}
+      `}>
+        <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                <div className={`text-[8px] font-black uppercase tracking-widest ${isGhost ? 'text-neon-pink' : 'text-neon-cyan'}`}>
+                    {data.type || 'Object'}
+                </div>
+                {isGhost && <Ghost className="w-3 h-3 text-neon-pink animate-pulse" />}
+            </div>
+            <div className="text-[10px] font-mono text-gray-400 truncate">{data.oid}</div>
+            <div className="text-[11px] font-bold text-gray-200 mt-1 line-clamp-2">{data.content}</div>
+            
+            {isGhost && (
+              <button 
+                onClick={(e) => { e.stopPropagation(); resurrect(data.oid); }}
+                className="mt-3 py-1.5 bg-neon-pink/10 hover:bg-neon-pink/30 border border-neon-pink/20 rounded-md text-[9px] font-black text-neon-pink uppercase transition-all"
+              >
+                Resurrect
+              </button>
+            )}
+        </div>
+      </div>
+    );
   };
+
+  const nodeTypes = useMemo(() => ({
+    commit: CustomNode,
+    tree: CustomNode,
+    blob: CustomNode,
+    ghost: CustomNode,
+  }), []);
 
   // Message Handling
   useEffect(() => {
@@ -162,6 +152,7 @@ export default function App() {
             console.log("Reflog Data:", message.data);
             const ghostNodes: Node[] = message.data.map((entry: any) => ({
                 id: `ghost-${entry.newSha}`,
+                type: 'ghost',
                 position: { x: Math.random() * 500, y: Math.random() * 500 },
                 data: { 
                     type: 'commit', 
@@ -183,6 +174,7 @@ export default function App() {
                 const { type, oid, content, parents, tree, entries } = message.data;
                 const newNode: Node = {
                     id: oid,
+                    type: type,
                     position: { x: 0, y: 0 },
                     data: { type, oid, content, parents, tree, entries, isGhost: false }
                 };
@@ -216,12 +208,6 @@ export default function App() {
     return () => window.removeEventListener('message', handleMessage);
   }, [setNodes, setEdges]);
 
-  // Wrap nodes to include custom label rendering
-  const styledNodes = useMemo(() => nodes.map(n => ({
-      ...n,
-      data: { ...n.data, label: renderNodeLabel(n) }
-  })), [nodes]);
-
   const onLayout = useCallback(() => {
       const layouted = getLayoutedElements(nodes, edges);
       setNodes([...layouted.nodes]);
@@ -229,9 +215,12 @@ export default function App() {
   }, [nodes, edges, setNodes, setEdges]);
 
   return (
-    <div className="w-screen h-screen bg-[#0d1117] text-white flex flex-col font-sans overflow-hidden">
-      {/* Glassmorphism Sidebar HUD */}
-      <div className="absolute top-6 left-6 z-20 flex flex-col gap-4 w-80 max-h-[calc(100vh-120px)] overflow-hidden">
+    <div className="w-screen h-screen bg-[#0a0a0c] text-white flex font-sans overflow-hidden">
+      {/* 1. Global Navigation Sidebar */}
+      <Sidebar />
+
+      <div className="flex-grow flex flex-col min-w-0 h-full">
+        {/* 2. Top Executive Toolbar */}
         <Toolbar 
             onPull={gitPull}
             onPush={gitPush}
@@ -240,56 +229,111 @@ export default function App() {
             onHuntGhosts={toggleGhosts}
         />
 
-        {/* Unified File Manager Area */}
-        <div className="flex-1 min-h-0 bg-white/5 backdrop-blur-md border border-white/10 p-5 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-           <FileManager files={gitFiles} onAdd={gitAdd} onUnstage={gitUnstage} />
-        </div>
-
-        {/* Conventional Commit Architect */}
-        <CommitBox onCommit={gitCommit} />
-      </div>
-
-      <div className="flex-grow">
-        <ReactFlow
-            nodes={styledNodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onEdgeClick={onEdgeClick}
-            fitView
-            className="bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-gray-900 via-black to-black"
-        >
-            <Background gap={20} color="#1a1a1a" size={1} />
-            <Controls 
-              className="!bg-gray-900/60 !backdrop-blur-xl !border !border-white/10 !rounded-xl !overflow-hidden !shadow-2xl !fill-blue-400 [&_button]:!border-white/5 [&_button:hover]:!bg-white/10" 
-              showInteractive={false}
-            />
-        </ReactFlow>
-      </div>
-
-      {/* Educational Tidbit - Floating Card */}
-      {educationalTip && (
-          <div className="fixed bottom-24 right-6 max-w-sm z-50 animate-in slide-in-from-bottom-5 fade-in duration-500">
-              <div className="bg-gray-900/90 backdrop-blur-xl border border-blue-500/20 p-6 rounded-2xl shadow-[0_0_50px_-12px_rgba(59,130,246,0.5)] relative overflow-hidden group">
-                  <div className={`absolute top-0 left-0 w-1.5 h-full ${educationalTip.type === 'success' ? 'bg-green-500' : 'bg-blue-500'}`} />
-                  <button onClick={() => setEducationalTip(null)} className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors">
-                      <X className="w-4 h-4" />
-                  </button>
-                  <div className="flex items-center gap-3 mb-3">
-                      <div className="p-1.5 rounded-lg bg-blue-500/10">
-                        <Zap className="w-5 h-5 text-blue-400" />
-                      </div>
-                      <h3 className="text-lg font-bold text-white">{educationalTip.title}</h3>
-                  </div>
-                  <p className="text-sm text-gray-400 leading-relaxed italic">"{educationalTip.content}"</p>
-                  <div className="mt-4 flex justify-end">
-                      <button onClick={() => setEducationalTip(null)} className="text-[10px] font-bold text-blue-400 hover:text-blue-300 uppercase tracking-widest">
-                          Dismiss
-                      </button>
-                  </div>
+        <div className="flex-grow flex min-h-0 relative">
+          
+          {/* 3. Central Graph View - The Matrix */}
+          <div className="flex-grow h-full bg-[#0d0d10] relative grid-bg">
+            {isDeploying && (
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center gap-4 transition-all duration-500">
+                <div className="relative">
+                  <Loader2 className="w-12 h-12 text-neon-cyan animate-spin" />
+                  <div className="absolute inset-0 bg-neon-cyan/20 blur-xl animate-pulse" />
+                </div>
+                <div className="text-neon-cyan font-black tracking-[0.3em] uppercase animate-pulse">Synchronizing Data...</div>
               </div>
+            )}
+
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              nodeTypes={nodeTypes}
+              fitView
+              className="z-10"
+            >
+              <Background color="rgba(0, 242, 255, 0.05)" gap={30} size={1} />
+              <Controls position="bottom-left" style={{ background: 'rgba(18,18,22,0.8)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px' }} />
+            </ReactFlow>
+
+            {/* Bottom Status Log (Simulated) */}
+            <div className="absolute bottom-6 left-6 right-6 h-32 bg-black/40 border border-white/5 rounded-xl backdrop-blur-md p-4 flex flex-col z-20 pointer-events-none opacity-60">
+                <div className="flex items-center gap-2 mb-2">
+                   <Terminal className="w-3 h-3 text-neon-cyan" />
+                   <span className="text-[9px] font-black uppercase text-neon-cyan/70 tracking-widest">Live Terminal Log</span>
+                </div>
+                <div className="flex-grow font-mono text-[9px] text-green-500/50 overflow-hidden leading-relaxed">
+                   [git] reading objects from .git/objects...<br/>
+                   [system] indexing branches and reflogs...<br/>
+                   [engine] analyzing tree structure for OID 4a2b9...<br/>
+                   [ui] refreshing graph layout and node positioning...
+                </div>
+            </div>
           </div>
+
+          {/* 4. Right Controls Sidebar - The Command Center */}
+          <div className="w-[320px] h-full bg-[#121216] border-l border-white/5 flex flex-col p-6 gap-8 overflow-y-auto custom-scrollbar shadow-[-10px_0_30px_rgba(0,0,0,0.5)] z-30">
+            
+            <div className="flex items-center justify-between group cursor-help">
+               <div className="flex flex-col">
+                  <span className="text-[10px] uppercase tracking-widest text-neon-cyan font-black">Git Status</span>
+                  <span className="text-[8px] text-gray-600 font-bold">CONNECTED TO MAIN</span>
+               </div>
+               <div className="p-2 rounded-lg bg-green-500/10 border border-green-500/20">
+                  <Box className="w-4 h-4 text-green-500 shadow-[0_0_10px_rgba(34,197,94,0.3)]" />
+               </div>
+            </div>
+
+            <div className="flex gap-2 justify-between px-2">
+               {[1, 2, 3, 4].map(i => (
+                  <div key={i} className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center text-[8px] text-gray-500 hover:border-neon-cyan transition-colors">
+                     S{i}
+                  </div>
+               ))}
+            </div>
+
+            <div className="flex-grow flex flex-col gap-8">
+               <FileManager files={gitFiles} onAdd={gitAdd} onUnstage={gitUnstage} />
+               <CommitBox onCommit={gitCommit} />
+            </div>
+
+            <div className="mt-auto border-t border-white/5 pt-6">
+                <div className="bg-gradient-to-br from-blue-500/10 to-purple-500/10 p-4 rounded-xl border border-white/5">
+                   <div className="flex items-center gap-2 mb-2">
+                      <Layers className="w-3 h-3 text-neon-cyan" />
+                      <span className="text-[9px] font-black text-gray-400 tracking-widest uppercase">System Load</span>
+                   </div>
+                   <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
+                      <div className="w-3/4 h-full bg-neon-cyan shadow-[0_0_10px_#00f2ff]" />
+                   </div>
+                </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {educationalTip && (
+        <div className="fixed bottom-10 right-10 z-[100] max-w-sm animate-in fade-in slide-in-from-bottom-10">
+          <div className="bg-[#121216]/95 backdrop-blur-xl border border-white/10 p-6 rounded-3xl shadow-2xl relative overflow-hidden group">
+            <div className={`absolute top-0 left-0 w-1 h-full ${educationalTip.type === 'ghost' ? 'bg-neon-pink shadow-[0_0_15px_#ff00ea]' : 'bg-neon-cyan shadow-[0_0_15px_#00f2ff]'}`} />
+            <button 
+              onClick={() => setEducationalTip(null)}
+              className="absolute top-4 right-4 text-gray-600 hover:text-white transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="flex items-start gap-4">
+              <div className={`p-3 rounded-2xl ${educationalTip.type === 'ghost' ? 'bg-neon-pink/10' : 'bg-neon-cyan/10'}`}>
+                {educationalTip.type === 'ghost' ? <Ghost className="w-6 h-6 text-neon-pink animate-pulse" /> : <Zap className="w-6 h-6 text-neon-cyan brightness-125" />}
+              </div>
+              <div>
+                <h4 className="font-black text-xs uppercase tracking-widest text-gray-400 mb-1">{educationalTip.title}</h4>
+                <p className="text-gray-300 text-sm leading-relaxed">{educationalTip.content}</p>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Cloud Dashboard Layer */}

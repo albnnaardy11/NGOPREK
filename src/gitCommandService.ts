@@ -23,7 +23,7 @@ export class GitCommandService {
     public static async getStatus(cwd: string): Promise<FileStatus[]> {
         try {
             const { stdout } = await this.exec('git status --porcelain', cwd);
-            const lines = stdout.split('\n').filter(line => line.trim() !== '');
+            const lines = stdout.split(/\r?\n/).filter(line => line.trim() !== '');
             
             return lines.map(line => {
                 const x = line[0];
@@ -68,6 +68,24 @@ export class GitCommandService {
                 vscode.window.showErrorMessage('NGOPREK: Merge Conflict Detected! Please resolve manually.');
             }
             throw e;
+        }
+    }
+
+    public static async getHeadOid(cwd: string): Promise<string | null> {
+        try {
+            const { stdout } = await this.exec('git rev-parse HEAD', cwd);
+            return stdout.trim();
+        } catch (e) {
+            return null;
+        }
+    }
+
+    public static async getRecentCommitOids(cwd: string, count: number = 10): Promise<string[]> {
+        try {
+            const { stdout } = await this.exec(`git log -n ${count} --format=%H`, cwd);
+            return stdout.trim().split(/\r?\n/).filter(line => line.trim() !== '');
+        } catch (e) {
+            return [];
         }
     }
 

@@ -4749,11 +4749,32 @@ class NgoPrekPanel {
     async pushGitStatus() {
         const folders = vscode.workspace.workspaceFolders;
         if (folders) {
-            const status = await gitCommandService_1.GitCommandService.getStatus(folders[0].uri.fsPath);
-            this.sendMessage({
-                command: 'gitStatusUpdate',
-                status: status
-            });
+            try {
+                const status = await gitCommandService_1.GitCommandService.getStatus(folders[0].uri.fsPath);
+                this.sendMessage({
+                    command: 'gitStatusUpdate',
+                    status: status
+                });
+            }
+            catch (e) {
+                console.error("Failed to push git status:", e);
+            }
+        }
+    }
+    async pushInitialGitObjects() {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders) {
+            const gitRoot = folders[0].uri.fsPath;
+            const oids = await gitCommandService_1.GitCommandService.getRecentCommitOids(gitRoot, 15);
+            for (const oid of oids) {
+                const gitObject = gitEngine_1.GitPlumbing.readObject(gitRoot, oid);
+                if (gitObject) {
+                    this.sendMessage({
+                        command: 'gitObjectChanged',
+                        data: gitObject
+                    });
+                }
+            }
         }
     }
     handleFetchReflog() {
@@ -4770,17 +4791,23 @@ class NgoPrekPanel {
         }
     }
     async initCloudLayer() {
+        // ALWAYS push git status, regardless of GitHub auth
+        this.pushGitStatus();
+        this.pushInitialGitObjects();
+        // Initial polling for local status
+        this._pollInterval = setInterval(() => {
+            this.pushGitStatus();
+        }, 5000);
         const token = await auth_1.AuthManager.getSession();
         if (token) {
             this._githubService = new githubService_1.GitHubService(token.accessToken);
-            // Initial fetch
+            // Initial fetch of cloud data
             this.pushCloudStatus();
-            this.pushGitStatus();
-            // Start polling
-            this._pollInterval = setInterval(() => {
+            // Add cloud polling to the interval
+            const cloudInterval = setInterval(() => {
                 this.pushCloudStatus();
-                this.pushGitStatus();
-            }, 10000);
+            }, 15000);
+            this._disposables.push({ dispose: () => clearInterval(cloudInterval) });
         }
     }
     async pushCloudStatus() {
@@ -4877,18 +4904,19 @@ class NgoPrekPanel {
             <html lang="en">
             <head>
                 <meta charset="UTF-8">
-                <!--
-                    Use a content security policy to only allow loading images from https or from our extension directory,
-                    and only allow scripts that have a specific nonce.
-                -->
-                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; 
+                    style-src ${webview.cspSource} 'unsafe-inline'; 
+                    script-src 'nonce-${nonce}' ${webview.cspSource} 'unsafe-eval'; 
+                    img-src ${webview.cspSource} https: data:; 
+                    font-src ${webview.cspSource} https: data:;
+                    connect-src ${webview.cspSource} https:;">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <link href="${styleUri}" rel="stylesheet">
                 <title>NGOPREK Dashboard</title>
             </head>
             <body>
                 <div id="root"></div>
-                <script nonce="${nonce}" src="${scriptUri}"></script>
+                <script nonce="${nonce}" type="module" src="${scriptUri}"></script>
             </body>
             </html>`;
     }
@@ -4967,7 +4995,7 @@ class GitCommandService {
     static async getStatus(cwd) {
         try {
             const { stdout } = await this.exec('git status --porcelain', cwd);
-            const lines = stdout.split('\n').filter(line => line.trim() !== '');
+            const lines = stdout.split(/\r?\n/).filter(line => line.trim() !== '');
             return lines.map(line => {
                 const x = line[0];
                 const y = line[1];
@@ -5010,6 +5038,24 @@ class GitCommandService {
                 vscode.window.showErrorMessage('NGOPREK: Merge Conflict Detected! Please resolve manually.');
             }
             throw e;
+        }
+    }
+    static async getHeadOid(cwd) {
+        try {
+            const { stdout } = await this.exec('git rev-parse HEAD', cwd);
+            return stdout.trim();
+        }
+        catch (e) {
+            return null;
+        }
+    }
+    static async getRecentCommitOids(cwd, count = 10) {
+        try {
+            const { stdout } = await this.exec(`git log -n ${count} --format=%H`, cwd);
+            return stdout.trim().split(/\r?\n/).filter(line => line.trim() !== '');
+        }
+        catch (e) {
+            return [];
         }
     }
     static async openGitk(cwd) {

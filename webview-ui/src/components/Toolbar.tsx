@@ -1,5 +1,4 @@
-import React from 'react';
-import { Download, Upload, Terminal, Ghost, Layout } from 'lucide-react';
+import { Terminal, Layout, Grid, Ghost } from 'lucide-react';
 
 interface ToolbarProps {
     onPull: () => void;
@@ -10,56 +9,43 @@ interface ToolbarProps {
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({ 
-    onPull, 
-    onPush, 
+    onPull,
+    onPush,
     onGitk, 
-    onLayout, 
-    onHuntGhosts 
+    onLayout,
+    onHuntGhosts
 }) => {
     return (
-        <div className="bg-white/5 backdrop-blur-md border border-white/10 p-5 rounded-2xl shadow-2xl">
-            <div className="flex justify-between items-center">
-                <div>
-                   <h1 className="text-2xl font-black bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">NGOPREK</h1>
-                   <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">Git Executive OS v1.1</p>
-                </div>
-                <div className="flex gap-1.5">
-                   <button 
-                       onClick={onPull} 
-                       className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-all group" 
-                       title="Git Pull"
-                   >
-                       <Download className="w-4 h-4 text-gray-400 group-hover:text-blue-400 transition-colors" />
-                   </button>
-                   <button 
-                       onClick={onPush} 
-                       className="p-2.5 bg-blue-500/5 hover:bg-blue-500/20 border border-blue-500/10 rounded-xl transition-all group" 
-                       title="Git Push"
-                   >
-                       <Upload className="w-4 h-4 text-blue-400 group-hover:scale-110 transition-transform" />
-                   </button>
-                   <button 
-                       onClick={onGitk} 
-                       className="p-2.5 bg-black/40 hover:bg-black/60 border border-white/5 rounded-xl transition-all group" 
-                       title="Open Gitk"
-                   >
-                       <Terminal className="w-4 h-4 text-gray-500 group-hover:text-white transition-colors" />
-                   </button>
-                </div>
+        <div className="flex items-center justify-between w-full h-14 px-6 bg-[#0a0a0c] border-b border-white/5">
+            <div className="flex items-center gap-4">
+               <h1 className="text-xl font-black tracking-tighter text-neon-cyan neon-text-cyan flex items-center gap-2">
+                   <Grid className="w-5 h-5" /> NGOPREK
+               </h1>
+               <div className="h-4 w-px bg-white/10" />
+               <span className="text-[10px] uppercase tracking-widest text-gray-600 font-bold">Standard OS v1.2</span>
             </div>
             
-            <div className="mt-5 flex gap-2">
-                <button 
-                    onClick={onLayout} 
-                    className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-blue-600/10 hover:bg-blue-600/20 border border-blue-500/20 rounded-xl text-[10px] font-black uppercase tracking-wider text-blue-400 transition-all backdrop-blur-sm shadow-inner"
-                >
-                    <Layout className="w-3 h-3" /> Optimize
+            <div className="flex items-center gap-2">
+                <button className="px-4 py-1.5 rounded-lg bg-white/5 border border-white/5 text-[10px] font-black uppercase tracking-widest text-gray-500 hover:bg-white/10 transition-all">
+                    Offline
                 </button>
-                <button 
-                    onClick={onHuntGhosts} 
-                    className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-purple-600/10 hover:bg-purple-600/20 border border-purple-500/20 rounded-xl text-[10px] font-black uppercase tracking-wider text-purple-400 transition-all backdrop-blur-sm shadow-inner"
-                >
-                    <Ghost className="w-3 h-3" /> Hunt Ghosts
+                <button onClick={onPull} className="px-4 py-1.5 rounded-lg bg-white/5 border border-white/5 text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-neon-cyan transition-all">
+                    Pull
+                </button>
+                <button onClick={onPush} className="px-6 py-1.5 rounded-lg bg-green-500/80 text-black text-[10px] font-black uppercase tracking-widest hover:bg-green-400 transition-all shadow-[0_0_15px_rgba(57,255,20,0.4)]">
+                    Push
+                </button>
+                
+                <div className="w-px h-6 bg-white/10 mx-2" />
+                
+                <button onClick={onGitk} className="p-2 text-gray-500 hover:text-white transition-colors">
+                    <Terminal className="w-4 h-4" />
+                </button>
+                <button onClick={onLayout} className="p-2 text-gray-500 hover:text-neon-cyan transition-colors" title="Optimize Layout">
+                    <Layout className="w-4 h-4" />
+                </button>
+                <button onClick={onHuntGhosts} className="p-2 text-gray-500 hover:text-neon-pink transition-colors" title="Hunt Ghosts">
+                    <Ghost className="w-4 h-4" />
                 </button>
             </div>
         </div>
