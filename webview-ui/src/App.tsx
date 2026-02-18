@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import ReactFlow, {
   Controls,
   Background,
@@ -34,13 +34,39 @@ export default function App() {
       const message = event.data;
       switch (message.command) {
         case 'gitObjectChanged':
-            console.log("Received Git Object Update:", message.text);
-            // In future steps: Parse message.data and update nodes
-            setNodes((nds) => nds.concat({
-                id: `node-${Date.now()}`,
-                position: { x: Math.random() * 400, y: Math.random() * 400 },
-                data: { label: message.text }
-            }));
+            console.log("Received Git Object Update:", message.data);
+            if (message.data) {
+                const { type, oid, content } = message.data;
+                
+                const newNode: Node = {
+                    id: oid,
+                    position: { x: Math.random() * 400 + 50, y: Math.random() * 400 + 50 },
+                    data: { 
+                        label: (
+                            <div className="p-2 bg-gray-800 border border-gray-600 rounded text-xs">
+                                <strong className="text-blue-300 uppercase">{type}</strong>
+                                <div className="text-gray-400 text-[10px]">{oid.substring(0, 7)}</div>
+                                <div className="mt-1 max-h-20 overflow-auto whitespace-pre-wrap font-mono text-[9px] text-green-400">
+                                    {content.substring(0, 100)}{content.length > 100 ? '...' : ''}
+                                </div>
+                            </div>
+                        ) 
+                    },
+                    style: { 
+                        border: '1px solid #777', 
+                        padding: 10,
+                        background: '#1e1e1e',
+                        color: '#fff',
+                        width: 150
+                    },
+                };
+
+                setNodes((nds) => {
+                    // Avoid duplicates
+                    if (nds.find(n => n.id === oid)) return nds;
+                    return nds.concat(newNode);
+                });
+            }
             break;
       }
     };

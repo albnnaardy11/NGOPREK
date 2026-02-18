@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { GitPlumbing, GitObject } from './gitEngine';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('NGOPREK is now active!');
@@ -14,14 +15,38 @@ export function activate(context: vscode.ExtensionContext) {
     // Watcher: Monitor .git/objects for changes
     const gitWatcher = vscode.workspace.createFileSystemWatcher('**/.git/objects/**');
 
-    gitWatcher.onDidCreate(() => {
-        NgoPrekPanel.currentPanel?.sendMessage({ command: 'gitObjectChanged', text: 'New Git Object detected!' });
-        vscode.window.showInformationMessage('NGOPREK: New Git Object Detected!');
-    });
+    const handleGitObjectChange = (uri: vscode.Uri) => {
+        try {
+            // Extract OID from path: .git/objects/12/3456789...
+            // Win path: .git\objects\12\3456789...
+            const match = uri.fsPath.match(/objects[\/\\]([0-9a-f]{2})[\/\\]([0-9a-f]{38})/i);
+            
+            if (match) {
+                const oid = match[1] + match[2];
+                // Find git root (assuming standard layout for now) or travel up
+                // For simplicity, we use the workspace folder logic or assume it is proportional to the uri
+                const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
+                
+                if (workspaceFolder) {
+                    const gitObject = GitPlumbing.readObject(workspaceFolder.uri.fsPath, oid);
+                    
+                    if (gitObject) {
+                         NgoPrekPanel.currentPanel?.sendMessage({ 
+                             command: 'gitObjectChanged', 
+                             text: 'New Git Object detected!',
+                             data: gitObject 
+                         });
+                         vscode.window.showInformationMessage(`NGOPREK: Parsed ${gitObject.type} ${oid.substring(0, 7)}`);
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Error handling git object change:", e);
+        }
+    };
 
-    gitWatcher.onDidChange(() => {
-        NgoPrekPanel.currentPanel?.sendMessage({ command: 'gitObjectChanged', text: 'Git Object Changed!' });
-    });
+    gitWatcher.onDidCreate(handleGitObjectChange);
+    gitWatcher.onDidChange(handleGitObjectChange);
 
     context.subscriptions.push(gitWatcher);
 }
