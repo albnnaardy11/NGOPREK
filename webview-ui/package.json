@@ -8,11 +8,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^2.0.4",
+    "@octokit/rest": "^20.0.2",
+    "@types/dagre": "^0.7.53",
+    "lucide-react": "^0.344.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "reactflow": "^11.10.1",
-    "@octokit/rest": "^20.0.2",
-    "lucide-react": "^0.344.0"
+    "reactflow": "^11.10.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.55",
