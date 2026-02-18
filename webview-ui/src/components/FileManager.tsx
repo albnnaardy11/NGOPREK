@@ -18,9 +18,9 @@ export const FileManager: React.FC<FileManagerProps> = ({ files, onAdd, onUnstag
 
     return (
         <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-2 mb-1 px-1">
-                <HardDrive className="w-3.5 h-3.5 text-neon-cyan" />
-                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">Working Tree</h3>
+            <div className="flex items-center gap-3 mb-2 px-2">
+                <HardDrive className="w-4 h-4 text-neon-cyan" />
+                <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-gray-500">Working Tree</h3>
             </div>
 
             <div className="space-y-3">

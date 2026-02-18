@@ -4579,11 +4579,20 @@ const educationalEngine_1 = __webpack_require__(/*! ./educationalEngine */ "./sr
 const gitCommandService_1 = __webpack_require__(/*! ./gitCommandService */ "./src/gitCommandService.ts");
 const cp = __importStar(__webpack_require__(/*! child_process */ "child_process"));
 function activate(context) {
-    console.log('NGOPREK is now active!');
+    console.log('NGOPREK: Activating...');
     // Register Command to Open Dashboard
-    context.subscriptions.push(vscode.commands.registerCommand('ngoprek.openDashboard', () => {
-        NgoPrekPanel.createOrShow(context.extensionUri);
-    }));
+    const openCommand = vscode.commands.registerCommand('ngoprek.openDashboard', () => {
+        console.log('NGOPREK: Command ngoprek.openDashboard triggered');
+        try {
+            NgoPrekPanel.createOrShow(context.extensionUri, context.extensionMode);
+        }
+        catch (e) {
+            console.error('NGOPREK: Failed to create panel:', e);
+            vscode.window.showErrorMessage(`NGOPREK Error: ${e}`);
+        }
+    });
+    context.subscriptions.push(openCommand);
+    console.log('NGOPREK: Registered openDashboard command');
     // Resurrection Command
     context.subscriptions.push(vscode.commands.registerCommand('ngoprek.resurrect', async (oid) => {
         const folders = vscode.workspace.workspaceFolders;
@@ -4633,12 +4642,14 @@ class NgoPrekPanel {
     static currentPanel;
     _panel;
     _extensionUri;
+    _extensionMode;
     _disposables = [];
     _githubService;
     _pollInterval;
-    constructor(panel, extensionUri) {
+    constructor(panel, extensionUri, extensionMode) {
         this._panel = panel;
         this._extensionUri = extensionUri;
+        this._extensionMode = extensionMode;
         // Set the webview's initial html content
         this._update();
         // Listen for when the panel is disposed
@@ -4898,7 +4909,7 @@ class NgoPrekPanel {
             }
         });
     }
-    static createOrShow(extensionUri) {
+    static createOrShow(extensionUri, extensionMode) {
         const column = vscode.window.activeTextEditor
             ? vscode.window.activeTextEditor.viewColumn
             : undefined;
@@ -4908,9 +4919,13 @@ class NgoPrekPanel {
         }
         const panel = vscode.window.createWebviewPanel('ngoprekDashboard', 'NGOPREK Dashboard', column || vscode.ViewColumn.One, {
             enableScripts: true,
-            localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'webview-ui', 'dist')]
+            localResourceRoots: [
+                vscode.Uri.joinPath(extensionUri, 'webview-ui', 'dist'),
+                vscode.Uri.joinPath(extensionUri, 'webview-ui', 'src'),
+                vscode.Uri.joinPath(extensionUri, 'webview-ui')
+            ]
         });
-        NgoPrekPanel.currentPanel = new NgoPrekPanel(panel, extensionUri);
+        NgoPrekPanel.currentPanel = new NgoPrekPanel(panel, extensionUri, extensionMode || vscode.ExtensionMode.Production);
     }
     sendMessage(message) {
         this._panel.webview.postMessage(message);
@@ -4932,14 +4947,36 @@ class NgoPrekPanel {
         this._panel.webview.html = this._getHtmlForWebview(webview);
     }
     _getHtmlForWebview(webview) {
-        // Local path to main script run in the webview
+        const isDev = this._extensionMode === vscode.ExtensionMode.Development;
+        const nonce = getNonce();
+        console.log(`NGOPREK: Generating HTML (isDev: ${isDev})`);
+        if (isDev) {
+            console.log('NGOPREK: Loading from Vite (http://localhost:5173)');
+            return `<!DOCTYPE html>
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; 
+                        style-src ${webview.cspSource} 'unsafe-inline' http://localhost:5173; 
+                        script-src 'nonce-${nonce}' ${webview.cspSource} 'unsafe-eval' http://localhost:5173; 
+                        img-src ${webview.cspSource} https: data: http://localhost:5173; 
+                        font-src ${webview.cspSource} https: data: http://localhost:5173;
+                        connect-src ${webview.cspSource} https: ws://localhost:5173 http://localhost:5173;">
+                    <title>NGOPREK Dashboard (Dev)</title>
+                </head>
+                <body>
+                    <div id="root"></div>
+                    <script type="module" nonce="${nonce}" src="http://localhost:5173/@vite/client"></script>
+                    <script type="module" nonce="${nonce}" src="http://localhost:5173/src/main.tsx"></script>
+                </body>
+                </html>`;
+        }
         const scriptPathOnDisk = vscode.Uri.joinPath(this._extensionUri, 'webview-ui', 'dist', 'assets', 'index.js');
         const stylePathOnDisk = vscode.Uri.joinPath(this._extensionUri, 'webview-ui', 'dist', 'assets', 'index.css');
-        // And the uri we use to load this script in the webview
+        console.log(`NGOPREK: Loading from Disk: ${scriptPathOnDisk.fsPath}`);
         const scriptUri = webview.asWebviewUri(scriptPathOnDisk);
         const styleUri = webview.asWebviewUri(stylePathOnDisk);
-        // Use a nonce to only allow specific scripts to be run
-        const nonce = getNonce();
         return `<!DOCTYPE html>
             <html lang="en">
             <head>

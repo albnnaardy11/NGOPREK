@@ -21,9 +21,9 @@ export const CommitBox: React.FC<CommitBoxProps> = ({ onCommit }) => {
 
     return (
         <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-2 px-1">
-                <Type className="w-3.5 h-3.5 text-neon-cyan" />
-                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">Atomic Commit</h3>
+            <div className="flex items-center gap-3 px-2 mb-2">
+                <Type className="w-4 h-4 text-neon-cyan" />
+                <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-gray-500">Atomic Commit</h3>
             </div>
 
             <div className="glass-panel rounded-xl p-3 flex flex-col gap-3">

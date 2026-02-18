@@ -1,18 +1,4 @@
 {
-    "css.validate": false,
-    "tailwindCSS.emmetCompletions": true,
-    "tailwindCSS.files.exclude": [
-        "**/.git/**",
-        "**/node_modules/**",
-        "**/.hg/**",
-        "**/.svn/**"
-    ],
-    "tailwindCSS.classAttributes": [
-        "class",
-        "className",
-        "ngClass"
-    ],
-    "scss.validate": false,
-    "less.validate": false
+    "css.customData": [],
+    "css.lint.unknownAtRules": "ignore"
 }
-
