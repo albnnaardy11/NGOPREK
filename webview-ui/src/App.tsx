@@ -13,6 +13,9 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import Dagre from '@dagrejs/dagre';
 import { Github, Loader2, CheckCircle2, X, Ghost, Zap } from 'lucide-react';
+import { CommitBox } from './components/CommitBox';
+import { FileManager, FileItem } from './components/FileManager';
+import { Toolbar } from './components/Toolbar';
 
 // VS Code API wrapper
 const vscode = (window as any).acquireVsCodeApi ? (window as any).acquireVsCodeApi() : { postMessage: () => {} };
@@ -59,6 +62,7 @@ export default function App() {
   const [isDeploying, setIsDeploying] = useState(false);
   const [repoUrl, setRepoUrl] = useState<string | null>(null);
   const [educationalTip, setEducationalTip] = useState<{ title: string, content: string, type?: string } | null>(null);
+  const [gitFiles, setGitFiles] = useState<FileItem[]>([]);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge(params, eds)),
@@ -89,6 +93,13 @@ export default function App() {
   const resurrect = (oid: string) => {
       vscode.postMessage({ command: 'resurrectCommit', oid });
   };
+
+  const gitAdd = (path: string) => vscode.postMessage({ command: 'gitAdd', path });
+  const gitUnstage = (path: string) => vscode.postMessage({ command: 'gitUnstage', path });
+  const gitCommit = (message: string) => vscode.postMessage({ command: 'gitCommit', message });
+  const gitPull = () => vscode.postMessage({ command: 'gitPull' });
+  const gitPush = () => vscode.postMessage({ command: 'gitPush' });
+  const openGitk = () => vscode.postMessage({ command: 'openGitk' });
 
   // Node Component Logic
   const renderNodeLabel = (node: any) => {
@@ -141,6 +152,10 @@ export default function App() {
 
         case 'educationalTidbit':
             setEducationalTip({ title: message.title, content: message.content, type: message.type });
+            break;
+
+        case 'gitStatusUpdate':
+            setGitFiles(message.status || []);
             break;
 
         case 'reflogData':
@@ -215,21 +230,23 @@ export default function App() {
 
   return (
     <div className="w-screen h-screen bg-[#0d1117] text-white flex flex-col font-sans overflow-hidden">
-      {/* Glassmorphism HUD */}
-      <div className="absolute top-6 left-6 z-20 flex flex-col gap-4">
-        <div className="bg-white/5 backdrop-blur-md border border-white/10 p-5 rounded-2xl shadow-2xl">
-            <h1 className="text-2xl font-black bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">NGOPREK</h1>
-            <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">Git Educational OS v1.0</p>
-            
-            <div className="mt-4 flex gap-2">
-                <button onClick={onLayout} className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/40 border border-blue-500/30 rounded-xl text-xs font-bold transition-all backdrop-blur-sm">
-                    Optimize Graph
-                </button>
-                <button onClick={toggleGhosts} className="px-4 py-2 bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-2 backdrop-blur-sm">
-                    <Ghost className="w-3 h-3 text-purple-400" /> Hunt Ghosts
-                </button>
-            </div>
+      {/* Glassmorphism Sidebar HUD */}
+      <div className="absolute top-6 left-6 z-20 flex flex-col gap-4 w-80 max-h-[calc(100vh-120px)] overflow-hidden">
+        <Toolbar 
+            onPull={gitPull}
+            onPush={gitPush}
+            onGitk={openGitk}
+            onLayout={onLayout}
+            onHuntGhosts={toggleGhosts}
+        />
+
+        {/* Unified File Manager Area */}
+        <div className="flex-1 min-h-0 bg-white/5 backdrop-blur-md border border-white/10 p-5 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+           <FileManager files={gitFiles} onAdd={gitAdd} onUnstage={gitUnstage} />
         </div>
+
+        {/* Conventional Commit Architect */}
+        <CommitBox onCommit={gitCommit} />
       </div>
 
       <div className="flex-grow">

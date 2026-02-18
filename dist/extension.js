@@ -4576,6 +4576,7 @@ const auth_1 = __webpack_require__(/*! ./auth */ "./src/auth.ts");
 const githubService_1 = __webpack_require__(/*! ./githubService */ "./src/githubService.ts");
 const reflogEngine_1 = __webpack_require__(/*! ./reflogEngine */ "./src/reflogEngine.ts");
 const educationalEngine_1 = __webpack_require__(/*! ./educationalEngine */ "./src/educationalEngine.ts");
+const gitCommandService_1 = __webpack_require__(/*! ./gitCommandService */ "./src/gitCommandService.ts");
 function activate(context) {
     console.log('NGOPREK is now active!');
     // Register Command to Open Dashboard
@@ -4659,8 +4660,101 @@ class NgoPrekPanel {
                 case 'resurrectCommit':
                     vscode.commands.executeCommand('ngoprek.resurrect', message.oid);
                     return;
+                case 'gitAdd':
+                    await this.handleGitAdd(message.path);
+                    return;
+                case 'gitUnstage':
+                    await this.handleGitUnstage(message.path);
+                    return;
+                case 'gitCommit':
+                    await this.handleGitCommit(message.message);
+                    return;
+                case 'gitPush':
+                    await this.handleGitPush();
+                    return;
+                case 'gitPull':
+                    await this.handleGitPull();
+                    return;
+                case 'openGitk':
+                    await this.handleOpenGitk();
+                    return;
+                case 'refreshState':
+                    this.pushGitStatus();
+                    return;
             }
         }, null, this._disposables);
+    }
+    async handleGitAdd(filePath) {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders) {
+            await gitCommandService_1.GitCommandService.add(folders[0].uri.fsPath, filePath);
+            this.pushGitStatus();
+        }
+    }
+    async handleGitUnstage(filePath) {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders) {
+            await gitCommandService_1.GitCommandService.unstage(folders[0].uri.fsPath, filePath);
+            this.pushGitStatus();
+        }
+    }
+    async handleGitCommit(message) {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders) {
+            try {
+                await gitCommandService_1.GitCommandService.commit(folders[0].uri.fsPath, message);
+                vscode.window.showInformationMessage(`NGOPREK: Committed "${message}"`);
+                this.pushGitStatus();
+            }
+            catch (e) {
+                vscode.window.showErrorMessage(`Commit Failed: ${e.stderr || e.message}`);
+            }
+        }
+    }
+    async handleGitPush() {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders) {
+            vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "NGOPREK: Pushing to Remote..." }, async () => {
+                try {
+                    await gitCommandService_1.GitCommandService.push(folders[0].uri.fsPath);
+                    vscode.window.showInformationMessage("NGOPREK: Push Successful!");
+                }
+                catch (e) {
+                    vscode.window.showErrorMessage(`Push Failed: ${e.stderr || e.message}`);
+                }
+            });
+        }
+    }
+    async handleGitPull() {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders) {
+            vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "NGOPREK: Pulling Changes..." }, async () => {
+                try {
+                    await gitCommandService_1.GitCommandService.pull(folders[0].uri.fsPath);
+                    vscode.window.showInformationMessage("NGOPREK: Pull Successful!");
+                    this.pushGitStatus();
+                }
+                catch (e) {
+                    // Conflict handled by service
+                }
+            });
+        }
+    }
+    async handleOpenGitk() {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders) {
+            await gitCommandService_1.GitCommandService.openGitk(folders[0].uri.fsPath);
+        }
+    }
+    async pushGitStatus() {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders) {
+            const status = await gitCommandService_1.GitCommandService.getStatus(folders[0].uri.fsPath);
+            this.sendMessage({
+                command: 'gitStatusUpdate',
+                status: status
+            });
+        }
     }
     handleFetchReflog() {
         const folders = vscode.workspace.workspaceFolders;
@@ -4681,9 +4775,11 @@ class NgoPrekPanel {
             this._githubService = new githubService_1.GitHubService(token.accessToken);
             // Initial fetch
             this.pushCloudStatus();
+            this.pushGitStatus();
             // Start polling
             this._pollInterval = setInterval(() => {
                 this.pushCloudStatus();
+                this.pushGitStatus();
             }, 10000);
         }
     }
@@ -4806,6 +4902,126 @@ function getNonce() {
     return text;
 }
 function deactivate() { }
+
+
+/***/ },
+
+/***/ "./src/gitCommandService.ts"
+/*!**********************************!*\
+  !*** ./src/gitCommandService.ts ***!
+  \**********************************/
+(__unused_webpack_module, exports, __webpack_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.GitCommandService = void 0;
+const cp = __importStar(__webpack_require__(/*! child_process */ "child_process"));
+const vscode = __importStar(__webpack_require__(/*! vscode */ "vscode"));
+class GitCommandService {
+    static exec(command, cwd) {
+        return new Promise((resolve, reject) => {
+            cp.exec(command, { cwd }, (error, stdout, stderr) => {
+                if (error) {
+                    reject({ error, stderr });
+                }
+                else {
+                    resolve({ stdout, stderr });
+                }
+            });
+        });
+    }
+    static async getStatus(cwd) {
+        try {
+            const { stdout } = await this.exec('git status --porcelain', cwd);
+            const lines = stdout.split('\n').filter(line => line.trim() !== '');
+            return lines.map(line => {
+                const x = line[0];
+                const y = line[1];
+                const filePath = line.substring(3);
+                let status = 'modified';
+                if (x === 'M' || x === 'A')
+                    status = 'staged';
+                else if (y === 'M')
+                    status = 'modified';
+                else if (x === '?' && y === '?')
+                    status = 'untracked';
+                else if (x === 'D' || y === 'D')
+                    status = 'deleted';
+                return { path: filePath, status };
+            });
+        }
+        catch (e) {
+            console.error('Failed to get git status:', e);
+            return [];
+        }
+    }
+    static async add(cwd, filePath) {
+        return this.exec(`git add "${filePath}"`, cwd);
+    }
+    static async unstage(cwd, filePath) {
+        return this.exec(`git reset HEAD "${filePath}"`, cwd);
+    }
+    static async commit(cwd, message) {
+        return this.exec(`git commit -m "${message}"`, cwd);
+    }
+    static async push(cwd) {
+        return this.exec('git push', cwd);
+    }
+    static async pull(cwd) {
+        try {
+            return await this.exec('git pull', cwd);
+        }
+        catch (e) {
+            if (e.stderr && e.stderr.includes('conflict')) {
+                vscode.window.showErrorMessage('NGOPREK: Merge Conflict Detected! Please resolve manually.');
+            }
+            throw e;
+        }
+    }
+    static async openGitk(cwd) {
+        // Run gitk in background without waiting for it to finish
+        cp.exec('gitk', { cwd }, (error) => {
+            if (error) {
+                vscode.window.showErrorMessage('NGOPREK: Could not open gitk. Make sure it is installed and in your PATH.');
+            }
+        });
+    }
+}
+exports.GitCommandService = GitCommandService;
 
 
 /***/ },
@@ -5322,6 +5538,17 @@ function wrappy (fn, cb) {
 
 "use strict";
 module.exports = require("vscode");
+
+/***/ },
+
+/***/ "child_process"
+/*!********************************!*\
+  !*** external "child_process" ***!
+  \********************************/
+(module) {
+
+"use strict";
+module.exports = require("child_process");
 
 /***/ },
 

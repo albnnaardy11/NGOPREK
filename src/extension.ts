@@ -5,6 +5,7 @@ import { AuthManager } from './auth';
 import { GitHubService } from './githubService';
 import { ReflogHunter } from './reflogEngine';
 import { EducationalEngine } from './educationalEngine';
+import { GitCommandService } from './gitCommandService';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('NGOPREK is now active!');
@@ -102,11 +103,108 @@ class NgoPrekPanel {
                     case 'resurrectCommit':
                         vscode.commands.executeCommand('ngoprek.resurrect', message.oid);
                         return;
+                    case 'gitAdd':
+                        await this.handleGitAdd(message.path);
+                        return;
+                    case 'gitUnstage':
+                        await this.handleGitUnstage(message.path);
+                        return;
+                    case 'gitCommit':
+                        await this.handleGitCommit(message.message);
+                        return;
+                    case 'gitPush':
+                        await this.handleGitPush();
+                        return;
+                    case 'gitPull':
+                        await this.handleGitPull();
+                        return;
+                    case 'openGitk':
+                        await this.handleOpenGitk();
+                        return;
+                    case 'refreshState':
+                        this.pushGitStatus();
+                        return;
                 }
             },
             null,
             this._disposables
         );
+    }
+
+    private async handleGitAdd(filePath: string) {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders) {
+            await GitCommandService.add(folders[0].uri.fsPath, filePath);
+            this.pushGitStatus();
+        }
+    }
+
+    private async handleGitUnstage(filePath: string) {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders) {
+            await GitCommandService.unstage(folders[0].uri.fsPath, filePath);
+            this.pushGitStatus();
+        }
+    }
+
+    private async handleGitCommit(message: string) {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders) {
+            try {
+                await GitCommandService.commit(folders[0].uri.fsPath, message);
+                vscode.window.showInformationMessage(`NGOPREK: Committed "${message}"`);
+                this.pushGitStatus();
+            } catch (e: any) {
+                vscode.window.showErrorMessage(`Commit Failed: ${e.stderr || e.message}`);
+            }
+        }
+    }
+
+    private async handleGitPush() {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders) {
+            vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "NGOPREK: Pushing to Remote..." }, async () => {
+                try {
+                    await GitCommandService.push(folders[0].uri.fsPath);
+                    vscode.window.showInformationMessage("NGOPREK: Push Successful!");
+                } catch (e: any) {
+                    vscode.window.showErrorMessage(`Push Failed: ${e.stderr || e.message}`);
+                }
+            });
+        }
+    }
+
+    private async handleGitPull() {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders) {
+            vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "NGOPREK: Pulling Changes..." }, async () => {
+                try {
+                    await GitCommandService.pull(folders[0].uri.fsPath);
+                    vscode.window.showInformationMessage("NGOPREK: Pull Successful!");
+                    this.pushGitStatus();
+                } catch (e: any) {
+                    // Conflict handled by service
+                }
+            });
+        }
+    }
+
+    private async handleOpenGitk() {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders) {
+            await GitCommandService.openGitk(folders[0].uri.fsPath);
+        }
+    }
+
+    private async pushGitStatus() {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders) {
+            const status = await GitCommandService.getStatus(folders[0].uri.fsPath);
+            this.sendMessage({
+                command: 'gitStatusUpdate',
+                status: status
+            });
+        }
     }
 
     private handleFetchReflog() {
@@ -129,10 +227,12 @@ class NgoPrekPanel {
             this._githubService = new GitHubService(token.accessToken);
             // Initial fetch
             this.pushCloudStatus();
+            this.pushGitStatus();
             
             // Start polling
             this._pollInterval = setInterval(() => {
                 this.pushCloudStatus();
+                this.pushGitStatus();
             }, 10000);
         }
     }
