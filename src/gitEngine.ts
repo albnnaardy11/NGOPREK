@@ -181,4 +181,29 @@ export class GitPlumbing {
         }
         return false;
     }
+    /**
+     * Reads the reflog to find "Ghost" (unreachable) commits.
+     */
+    public static readReflog(gitRootPath: string): any[] {
+        const reflogPath = path.join(gitRootPath, '.git', 'logs', 'HEAD');
+        if (!fs.existsSync(reflogPath)) return [];
+
+        try {
+            const content = fs.readFileSync(reflogPath, 'utf8');
+            const lines = content.trim().split('\n');
+            
+            // Format: <old-sha> <new-sha> <user> <timestamp> <message>
+            return lines.map(line => {
+                const parts = line.split(' ');
+                return {
+                    oldSha: parts[0],
+                    newSha: parts[1],
+                    message: parts.slice(5).join(' ')
+                };
+            }).reverse(); // Latest first
+        } catch (e) {
+            console.error("Failed to read reflog:", e);
+            return [];
+        }
+    }
 }
