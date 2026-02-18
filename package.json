@@ -1,0 +1,58 @@
+{
+  "name": "ngoprek",
+  "displayName": "NGOPREK",
+  "description": "An Advanced Git Learning Operating System for VS Code",
+  "version": "0.0.1",
+  "publisher": "ngoprek-corp",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Visualization",
+    "Education"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ngoprek.openDashboard",
+        "title": "NGOPREK: Open Git Dashboard"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "20.x",
+    "@typescript-eslint/eslint-plugin": "^7.0.2",
+    "@typescript-eslint/parser": "^7.0.2",
+    "eslint": "^8.56.0",
+    "glob": "^8.1.0",
+    "mocha": "^10.3.0",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.3.3",
+    "webpack": "^5.90.3",
+    "webpack-cli": "^5.1.4",
+    "@types/react": "^18.2.55",
+    "@types/react-dom": "^18.2.19"
+  },
+  "dependencies": {
+    "isomorphic-git": "^1.25.6",
+    "@octokit/rest": "^20.0.2",
+    "zlib": "^1.0.5"
+  }
+}
