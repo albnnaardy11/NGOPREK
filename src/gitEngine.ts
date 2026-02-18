@@ -20,7 +20,7 @@ export interface GitObject {
 export class GitPlumbing {
     /**
      * Reads and decodes a Git object from the .git/objects directory.
-     * This is the "Geprek" operation - breaking down the binary.
+     * This is the "Ngoprek" operation - breaking down the binary.
      * @param gitRootPath The root path of the repository (containing .git)
      * @param oid The SHA-1 Object ID to read
      */
